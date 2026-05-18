@@ -100,56 +100,7 @@ def apply_shift_validation(df_incidentes):
     
     return df_incidentes
 
-def predict_requirement_assignments(df_requerimientos, model_type='supervised'):
-    """Predict assignments for requirements using trained models"""
-    print(f"Predicting requirement assignments using {model_type} model...")
-    
-    model_path = f"Requerimientos/{model_type}_model"
-    
-    if model_type == 'supervised':
-        try:
-            # Load supervised model
-            pipeline = joblib.load(f"{model_path}/assigned_to_tfidf_svm.joblib")
-            label_encoder = joblib.load(f"{model_path}/label_encoder.joblib")
-            
-            # Prepare text features (same as in training)
-            import re, unicodedata
-            
-            def normalize_text(s):
-                if not isinstance(s, str): return ""
-                s = s.strip().lower()
-                s = unicodedata.normalize("NFKC", s)
-                s = re.sub(r"\s+", " ", s)
-                return s
-            
-            def build_text(row):
-                parts = [
-                    row.get("requested_for.title", ""),
-                    row.get("requested_for.company", ""),
-                    row.get("short_description", ""),
-                    row.get("description", "")
-                ]
-                return normalize_text(" ".join([p for p in parts if isinstance(p, str)]))
-            
-            df_requerimientos["text"] = df_requerimientos.apply(build_text, axis=1)
-            
-            # Make predictions
-            X = df_requerimientos["text"].values
-            predictions = pipeline.predict(X)
-            predicted_assignees = label_encoder.inverse_transform(predictions)
-            
-            # Add predictions to dataframe
-            df_requerimientos["predicted_assigned_to"] = predicted_assignees
-            
-            return df_requerimientos
-            
-        except Exception as e:
-            print(f"Error in supervised prediction: {e}")
-            return df_requerimientos
-    
-    return df_requerimientos
-
-def generate_assignment_reports(df_incidentes, df_requerimientos, timing):
+def generate_assignment_reports(df_incidentes, timing):
     """Generate output files with assignment predictions"""
     print("Generating assignment reports...")
     
@@ -162,16 +113,10 @@ def generate_assignment_reports(df_incidentes, df_requerimientos, timing):
         df_incidentes.to_csv(incident_output, sep=';', index=False, encoding='latin-1')
         print(f"Incident assignments saved to: {incident_output}")
     
-    # Save requirement predictions
-    if "predicted_assigned_to" in df_requerimientos.columns:
-        requirement_output = f"Salida/requerimientos_con_asignacion_{timing}.csv"
-        df_requerimientos.to_csv(requirement_output, sep=';', index=False, encoding='latin-1')
-        print(f"Requirement assignments saved to: {requirement_output}")
-    
     # Generate summary report
-    summary_path = f"Salida/resumen_asignaciones_{timing}.txt"
+    summary_path = f"Salida/resumen_asignaciones_incidentes_{timing}.txt"
     with open(summary_path, 'w', encoding='utf-8') as f:
-        f.write(f"Assignment Summary - {timing}\n")
+        f.write(f"Incident Assignment Summary - {timing}\n")
         f.write("=" * 50 + "\n\n")
         
         if "predicted_assigned_to" in df_incidentes.columns:
@@ -180,24 +125,14 @@ def generate_assignment_reports(df_incidentes, df_requerimientos, timing):
             f.write("\nTop 5 predicted assignees:\n")
             f.write(df_incidentes['predicted_assigned_to'].value_counts().head().to_string())
             f.write("\n\n")
-        
-        if "predicted_assigned_to" in df_requerimientos.columns:
-            f.write(f"Requirements processed: {len(df_requerimientos)}\n")
-            f.write(f"Unique assignees predicted: {df_requerimientos['predicted_assigned_to'].nunique()}\n")
-            f.write("\nTop 5 predicted assignees:\n")
-            f.write(df_requerimientos['predicted_assigned_to'].value_counts().head().to_string())
     
     print(f"Summary report saved to: {summary_path}")
 
 def load_and_clean_data():
-    """Load and clean incident and requirement data files"""
-    print("Loading and cleaning data files...")
+    """Load and clean incident data files"""
+    print("Loading and cleaning incident data files...")
     
     # Clean old processed files
-    for file in glob.glob("Entrada/requerimientos*"):
-        print("Eliminando", file)
-        os.remove(file)
-    
     for file in glob.glob("Entrada/incidentes*"):
         print("Eliminando", file)
         os.remove(file)
@@ -205,15 +140,6 @@ def load_and_clean_data():
     timing = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     
     # Clean data files
-    limpiar_archivo_csv(
-        ruta_entrada="Entrada/requirements.csv",
-        ruta_salida=f"Entrada/requerimientos_{timing}.csv",
-        encoding="latin-1",
-        replacement=" ",
-        cambiar_separador=True,
-        nuevo_separador=';'
-    )
-    
     limpiar_archivo_csv(
         ruta_entrada="Entrada/incidents.csv",
         ruta_salida=f"Entrada/incidentes_{timing}.csv",
@@ -224,30 +150,30 @@ def load_and_clean_data():
     )
     
     # Load cleaned data
-    df_requerimientos = pd.read_csv(f"Entrada/requerimientos_{timing}.csv", sep=';', dtype=str, engine='python',
-                     on_bad_lines='skip', encoding='latin-1')
-    
     df_incidentes = pd.read_csv(f"Entrada/incidentes_{timing}.csv", sep=';', dtype=str, engine='python',
                      on_bad_lines='skip', encoding='latin-1')
     
-    print(f"Loaded {len(df_requerimientos)} requirements and {len(df_incidentes)} incidents")
+    print(f"Loaded {len(df_incidentes)} incidents")
     
-    return df_requerimientos, df_incidentes, timing
+    return df_incidentes, timing
 
 def main():
-    """Main assignment workflow"""
+    """Main assignment workflow for incidents"""
     # Load and clean data
-    df_requerimientos, df_incidentes, timing = load_and_clean_data()
+    try:
+        df_incidentes, timing = load_and_clean_data()
+    except Exception as e:
+        print(f"Error loading data: {e}. Please ensure Entrada/incidents.csv exists.")
+        return
     
     # Make predictions (using existing trained models)
-    print("Making assignment predictions...")
+    print("Making assignment predictions for incidents...")
     df_incidentes = predict_incident_assignments(df_incidentes, model_type='supervised')
-    df_requerimientos = predict_requirement_assignments(df_requerimientos, model_type='supervised')
     
     # Generate reports
-    generate_assignment_reports(df_incidentes, df_requerimientos, timing)
+    generate_assignment_reports(df_incidentes, timing)
     
-    print(f"Assignment process completed successfully at {timing}")
+    print(f"Incident assignment process completed successfully at {timing}")
 
 if __name__ == "__main__":
     main()

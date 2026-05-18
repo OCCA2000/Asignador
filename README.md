@@ -17,7 +17,8 @@ Este sistema utiliza modelos de Machine Learning para asignar automáticamente i
 
 ```
 Asignador/
-├── Assigner.py              # Programa principal de asignación
+├── Assigner_Incidents.py    # Programa principal para incidentes
+├── Assigner_Requirements.py # Programa principal para requerimientos
 ├── Programas/
 │   ├── CleaningData.py      # Funciones de limpieza de datos
 │   └── Trainer.py          # Entrenamiento de modelos
@@ -53,7 +54,8 @@ python Trainer.py
 
 ### Ejecutar Asignación
 ```bash
-python Assigner.py
+python Assigner_Incidents.py
+python Assigner_Requirements.py
 ```
 
 ## Configuration
@@ -95,14 +97,15 @@ El sistema incluye manejo robusto de errores:
 ## Development
 
 ### Estructura del Código
-- `Assigner.py`: Workflow principal de asignación
+- `Assigner_Incidents.py`: Workflow principal para incidentes
+- `Assigner_Requirements.py`: Workflow principal para requerimientos
 - `Trainer.py`: Entrenamiento y actualización de modelos
 - `CleaningData.py`: Utilidades de procesamiento de datos
 
 ### Testing
 Ejecutar tests individuales:
 ```bash
-python -c "from Assigner import load_and_clean_data; load_and_clean_data()"
+python -c "from Assigner_Incidents import load_and_clean_data; load_and_clean_data()"
 ```
 
 ## Contributing
