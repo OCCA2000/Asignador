@@ -4,8 +4,9 @@ import glob
 import os
 import pandas as pd
 import joblib
+from Programas.LoadBalancer import WorkloadBalancer
 
-def predict_incident_assignments(df_incidentes, model_type='supervised'):
+def predict_incident_assignments(df_incidentes, balancer, model_type='supervised'):
     """Predict assignments for incidents using trained models"""
     print(f"Predicting incident assignments using {model_type} model...")
     
@@ -52,6 +53,9 @@ def predict_incident_assignments(df_incidentes, model_type='supervised'):
             
             # Apply shift validation rule
             df_incidentes = apply_shift_validation(df_incidentes)
+            
+            # Add group prediction and load balance
+            df_incidentes = balancer.balance_assignment(df_incidentes)
             
             return df_incidentes
             
@@ -141,7 +145,7 @@ def load_and_clean_data():
     
     # Clean data files
     limpiar_archivo_csv(
-        ruta_entrada="Entrada/incidents.csv",
+        ruta_entrada="Entrada/incident.csv",
         ruta_salida=f"Entrada/incidentes_{timing}.csv",
         encoding="latin-1",
         replacement=" ",
@@ -155,23 +159,37 @@ def load_and_clean_data():
     
     print(f"Loaded {len(df_incidentes)} incidents")
     
-    return df_incidentes, timing
+    original_columns = list(df_incidentes.columns)
+    
+    return df_incidentes, timing, original_columns
 
 def main():
     """Main assignment workflow for incidents"""
     # Load and clean data
     try:
-        df_incidentes, timing = load_and_clean_data()
+        df_incidentes, timing, original_columns = load_and_clean_data()
     except Exception as e:
-        print(f"Error loading data: {e}. Please ensure Entrada/incidents.csv exists.")
+        print(f"Error loading data: {e}. Please ensure Entrada/incident.csv exists.")
         return
+        
+    balancer = WorkloadBalancer()
     
     # Make predictions (using existing trained models)
     print("Making assignment predictions for incidents...")
-    df_incidentes = predict_incident_assignments(df_incidentes, model_type='supervised')
+    df_incidentes = predict_incident_assignments(df_incidentes, balancer, model_type='supervised')
     
     # Generate reports
     generate_assignment_reports(df_incidentes, timing)
+    
+    # Update original assigned file
+    try:
+        df_incidentes["assigned_to"] = df_incidentes["predicted_assigned_to"]
+        df_incidentes["assignment_group"] = df_incidentes["predicted_assignment_group"]
+        df_to_append = df_incidentes[original_columns]
+        df_to_append.to_csv("Entrada/assigned_incidents.csv", mode='a', index=False, header=False, sep=',', encoding='utf-8')
+        print("Successfully updated Entrada/assigned_incidents.csv")
+    except Exception as e:
+        print(f"Error updating assigned file: {e}")
     
     print(f"Incident assignment process completed successfully at {timing}")
 

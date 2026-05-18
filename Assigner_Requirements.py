@@ -4,8 +4,9 @@ import glob
 import os
 import pandas as pd
 import joblib
+from Programas.LoadBalancer import WorkloadBalancer
 
-def predict_requirement_assignments(df_requerimientos, model_type='supervised'):
+def predict_requirement_assignments(df_requerimientos, balancer, model_type='supervised'):
     """Predict assignments for requirements using trained models"""
     print(f"Predicting requirement assignments using {model_type} model...")
     
@@ -45,6 +46,9 @@ def predict_requirement_assignments(df_requerimientos, model_type='supervised'):
             
             # Add predictions to dataframe
             df_requerimientos["predicted_assigned_to"] = predicted_assignees
+            
+            # Add group prediction and load balance
+            df_requerimientos = balancer.balance_assignment(df_requerimientos)
             
             return df_requerimientos
             
@@ -94,7 +98,7 @@ def load_and_clean_data():
     
     # Clean data files
     limpiar_archivo_csv(
-        ruta_entrada="Entrada/requirements.csv",
+        ruta_entrada="Entrada/sc_req_item.csv",
         ruta_salida=f"Entrada/requerimientos_{timing}.csv",
         encoding="latin-1",
         replacement=" ",
@@ -108,27 +112,41 @@ def load_and_clean_data():
     
     print(f"Loaded {len(df_requerimientos)} requirements")
     
-    return df_requerimientos, timing
+    original_columns = list(df_requerimientos.columns)
+    
+    return df_requerimientos, timing, original_columns
 
 def main():
     """Main requirement assignment workflow"""
     # Load and clean data
     try:
-        df_requerimientos, timing = load_and_clean_data()
+        df_requerimientos, timing, original_columns = load_and_clean_data()
     except Exception as e:
-        print(f"Error loading data: {e}. Please ensure Entrada/requirements.csv exists.")
+        print(f"Error loading data: {e}. Please ensure Entrada/sc_req_item.csv exists.")
         return
         
     if df_requerimientos.empty:
         print("No requirements to process.")
         return
     
+    balancer = WorkloadBalancer()
+    
     # Make predictions (using existing trained models)
     print("Making assignment predictions for requirements...")
-    df_requerimientos = predict_requirement_assignments(df_requerimientos, model_type='supervised')
+    df_requerimientos = predict_requirement_assignments(df_requerimientos, balancer, model_type='supervised')
     
     # Generate reports
     generate_assignment_reports(df_requerimientos, timing)
+    
+    # Update original assigned file
+    try:
+        df_requerimientos["assigned_to"] = df_requerimientos["predicted_assigned_to"]
+        df_requerimientos["assignment_group"] = df_requerimientos["predicted_assignment_group"]
+        df_to_append = df_requerimientos[original_columns]
+        df_to_append.to_csv("Entrada/assigned_requirements.csv", mode='a', index=False, header=False, sep=',', encoding='utf-8')
+        print("Successfully updated Entrada/assigned_requirements.csv")
+    except Exception as e:
+        print(f"Error updating assigned file: {e}")
     
     print(f"Requirement assignment process completed successfully at {timing}")
 
