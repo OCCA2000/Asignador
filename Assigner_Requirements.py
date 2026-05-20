@@ -58,7 +58,7 @@ def predict_requirement_assignments(df_requerimientos, balancer, model_type='sup
     
     return df_requerimientos
 
-def generate_assignment_reports(df_requerimientos, timing):
+def generate_assignment_reports(df_requerimientos, timing, balancer=None):
     """Generate output files with assignment predictions"""
     print("Generating assignment reports...")
     
@@ -82,6 +82,15 @@ def generate_assignment_reports(df_requerimientos, timing):
             f.write(f"Unique assignees predicted: {df_requerimientos['predicted_assigned_to'].nunique()}\n")
             f.write("\nTop 5 predicted assignees:\n")
             f.write(df_requerimientos['predicted_assigned_to'].value_counts().head().to_string())
+            f.write("\n\n")
+            
+        if balancer and hasattr(balancer, 'workload') and balancer.workload:
+            f.write("Total Workload Distribution (All active tickets):\n")
+            f.write("-" * 50 + "\n")
+            sorted_workload = sorted(balancer.workload.items(), key=lambda item: item[1], reverse=True)
+            for person, count in sorted_workload:
+                f.write(f"{person.ljust(40)} {count} tickets\n")
+            f.write("\n")
     
     print(f"Summary report saved to: {summary_path}")
 
@@ -136,7 +145,7 @@ def main():
     df_requerimientos = predict_requirement_assignments(df_requerimientos, balancer, model_type='supervised')
     
     # Generate reports
-    generate_assignment_reports(df_requerimientos, timing)
+    generate_assignment_reports(df_requerimientos, timing, balancer)
     
     # Update original assigned file
     try:
