@@ -9,7 +9,9 @@ class WorkloadBalancer:
         self.assigned_incidents = assigned_incidents
         self.assigned_requirements = assigned_requirements
         self.workload = {}
-        self.group_members = {}
+        self.group_members_l1 = {}
+        self.group_members_l2 = {}
+        self.group_members_l3 = {}
         self.name_to_group = {}
         
         self._load_grupos()
@@ -24,23 +26,28 @@ class WorkloadBalancer:
         
         for _, row in df_grupos.iterrows():
             nombre = str(row.get('NOMBRE', '')).strip().upper()
-            grupo = str(row.get('GRUPO 1', '')).strip()
+            grupo1 = str(row.get('GRUPO 1', '')).strip()
+            grupo2 = str(row.get('GRUPO 2', '')).strip()
+            grupo3 = str(row.get('GRUPO 3', '')).strip()
             activo = str(row.get('ACTIVO', '')).strip().upper()
             
-            if not grupo or grupo.lower() == 'nan':
-                grupo = "NO GROUP FOUND"
+            if not grupo1 or grupo1.lower() == 'nan':
+                grupo1 = "NO GROUP FOUND"
                 
             if nombre and nombre.lower() != 'nan':
-                self.name_to_group[nombre] = grupo
+                self.name_to_group[nombre] = grupo1
                 # Initialize workload counter
                 if nombre not in self.workload:
                     self.workload[nombre] = 0
                 
                 # Add to group members if active
                 if activo == 'S':
-                    if grupo not in self.group_members:
-                        self.group_members[grupo] = []
-                    self.group_members[grupo].append(nombre)
+                    if grupo1 and grupo1.lower() != 'nan':
+                        self.group_members_l1.setdefault(grupo1, []).append(nombre)
+                    if grupo2 and grupo2.lower() != 'nan':
+                        self.group_members_l2.setdefault(grupo2, []).append(nombre)
+                    if grupo3 and grupo3.lower() != 'nan':
+                        self.group_members_l3.setdefault(grupo3, []).append(nombre)
 
     def _load_initial_workload(self):
         print("Calculating initial workload...")
@@ -80,7 +87,7 @@ class WorkloadBalancer:
         if prediction_col not in df.columns:
             return df
             
-        print("Applying load balancing logic...")
+        print("Applying load balancing logic with priorities and thresholds...")
         
         groups_assigned = []
         new_assignees = []
@@ -101,16 +108,49 @@ class WorkloadBalancer:
             grupo = self.name_to_group.get(name_str, "NO GROUP FOUND")
             groups_assigned.append(grupo)
             
-            if grupo == "NO GROUP FOUND" or grupo not in self.group_members or not self.group_members[grupo]:
-                # Keep original if no active members found in the assigned group
+            l1_candidates = self.group_members_l1.get(grupo, [])
+            l2_candidates = self.group_members_l2.get(grupo, [])
+            l3_candidates = self.group_members_l3.get(grupo, [])
+            
+            all_cands = list(set(l1_candidates + l2_candidates + l3_candidates))
+            
+            if grupo == "NO GROUP FOUND" or not all_cands:
+                # Keep original if no active members found in any group level
                 new_assignees.append(name_str) 
                 continue
                 
-            # Find active member with lowest workload
-            members = self.group_members[grupo]
-            random.shuffle(members)  # prevent always picking the same person on ties
-            best_member = min(members, key=lambda m: self.workload.get(m, 0))
+            # Calculate mean workload for this group's active members
+            group_mean = sum(self.workload.get(m, 0) for m in all_cands) / len(all_cands)
+            threshold = group_mean + 3
             
+            best_member = None
+            
+            # Level 1 priority
+            if l1_candidates:
+                random.shuffle(l1_candidates)
+                cand = min(l1_candidates, key=lambda m: self.workload.get(m, 0))
+                if self.workload.get(cand, 0) <= threshold:
+                    best_member = cand
+            
+            # Level 2 priority
+            if not best_member and l2_candidates:
+                random.shuffle(l2_candidates)
+                cand = min(l2_candidates, key=lambda m: self.workload.get(m, 0))
+                if self.workload.get(cand, 0) <= threshold:
+                    best_member = cand
+                    
+            # Level 3 priority
+            if not best_member and l3_candidates:
+                random.shuffle(l3_candidates)
+                cand = min(l3_candidates, key=lambda m: self.workload.get(m, 0))
+                if self.workload.get(cand, 0) <= threshold:
+                    best_member = cand
+            
+            # Fallback if everyone is overloaded
+            if not best_member:
+                random.shuffle(all_cands)
+                best_member = min(all_cands, key=lambda m: self.workload.get(m, 0))
+                
             # Assign and increment workload
             new_assignees.append(best_member)
             self.workload[best_member] = self.workload.get(best_member, 0) + 1
