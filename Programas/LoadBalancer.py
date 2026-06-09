@@ -1,32 +1,24 @@
 import pandas as pd
 import os
+import re
+import unicodedata
 from datetime import datetime, timedelta
 from Programas.CleaningData import limpiar_archivo_csv
 import random
 
 class WorkloadBalancer:
-    def __init__(self, grupos_path="Entrada/Grupos.csv", assigned_incidents="Entrada/assigned_incidents.csv", assigned_requirements="Entrada/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7):
+    def __init__(self, grupos_path="Entrada/Grupos - Incidentes(Grupos).csv", assigned_incidents="Entrada/assigned_incidents.csv", assigned_requirements="Entrada/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7):
         self.grupos_path = grupos_path
         self.assigned_incidents = assigned_incidents
         self.assigned_requirements = assigned_requirements
-        # Peso aplicado a los tickets resueltos al calcular la carga efectiva.
-        # Valor entre 0 y 1: 0 = ignorar resueltos, 1 = equivalen a tickets abiertos.
-        # Ejemplo: resolved_weight=0.5 → resolver 10 tickets suma 5 de carga efectiva.
-        # Ajustar según qué tan agresivo se quiera penalizar a quienes resuelven rápido.
         self.resolved_weight = resolved_weight
-        # Ventana de días hacia atrás para contabilizar tickets resueltos.
-        # Solo se cuentan resueltos dentro de los últimos N días.
-        # Ejemplo: resolved_days_window=7 → solo resueltos de la última semana.
-        # Usar None para considerar todo el historial sin límite de tiempo.
         self.resolved_days_window = resolved_days_window
-        # Tickets actualmente abiertos por persona {NOMBRE: cantidad}
         self.workload = {}
-        # Tickets resueltos/cerrados por persona {NOMBRE: cantidad}
-        # Se usa junto con resolved_weight para calcular la carga efectiva.
         self.resolved_workload = {}
         self.group_members_l1 = {}
         self.group_members_l2 = {}
         self.group_members_l3 = {}
+        self.classification_to_group = {}
         self.name_to_group = {}
         
         self._load_grupos()
@@ -37,32 +29,56 @@ class WorkloadBalancer:
             print(f"Warning: {self.grupos_path} not found.")
             return
             
-        df_grupos = pd.read_csv(self.grupos_path, sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1')
-        
-        for _, row in df_grupos.iterrows():
-            nombre = str(row.get('NOMBRE', '')).strip().upper()
-            grupo1 = str(row.get('GRUPO 1', '')).strip()
-            grupo2 = str(row.get('GRUPO 2', '')).strip()
-            grupo3 = str(row.get('GRUPO 3', '')).strip()
-            activo = str(row.get('ACTIVO', '')).strip().upper()
+        try:
+            # Intentar leer por coma primero
+            df_grupos = pd.read_csv(self.grupos_path, sep=',', encoding='latin-1', dtype=str)
+            if len(df_grupos.columns) == 1:
+                # Fallback a punto y coma
+                df_grupos = pd.read_csv(self.grupos_path, sep=';', encoding='latin-1', dtype=str)
+        except Exception:
+            df_grupos = pd.read_csv(self.grupos_path, sep=';', encoding='latin-1', dtype=str)
             
-            if not grupo1 or grupo1.lower() == 'nan':
-                grupo1 = "NO GROUP FOUND"
-                
-            if nombre and nombre.lower() != 'nan':
-                self.name_to_group[nombre] = grupo1
-                # Initialize workload counter
+        # El nuevo formato: Las columnas son los Macrogrupos, las filas debajo son los miembros
+        def _normalize_text(text):
+            if pd.isna(text):
+                return ''
+            s = str(text)
+            s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('utf-8')
+            s = s.lower().replace('.', '').replace('/', ' ')
+            s = re.sub(r'\s+', ' ', s).strip()
+            return s
+
+        def _singularize_phrase(s):
+            tokens = s.split()
+            tokens = [t[:-1] if t.endswith('s') else t for t in tokens]
+            return ' '.join(tokens)
+
+        for col in df_grupos.columns:
+            macrogrupo = str(col).strip().upper()
+            if not macrogrupo or macrogrupo == 'NAN':
+                continue
+
+            # Build classification -> macrogrupo mapping using normalized keys
+            norm_col = _normalize_text(col)
+            sing_col = _singularize_phrase(norm_col)
+            if norm_col:
+                self.classification_to_group[norm_col] = macrogrupo
+            if sing_col and sing_col != norm_col:
+                self.classification_to_group[sing_col] = macrogrupo
+
+            for val in df_grupos[col]:
+                if pd.isna(val):
+                    continue
+                nombre = str(val).strip().upper()
+                if not nombre or nombre == 'NAN':
+                    continue
+
+                # Asignamos la persona al macrogrupo en Nivel 1 (igual prioridad para todos)
+                self.group_members_l1.setdefault(macrogrupo, []).append(nombre)
+                self.name_to_group[nombre] = macrogrupo
+
                 if nombre not in self.workload:
                     self.workload[nombre] = 0
-                
-                # Add to group members if active
-                if activo == 'S':
-                    if grupo1 and grupo1.lower() != 'nan':
-                        self.group_members_l1.setdefault(grupo1, []).append(nombre)
-                    if grupo2 and grupo2.lower() != 'nan':
-                        self.group_members_l2.setdefault(grupo2, []).append(nombre)
-                    if grupo3 and grupo3.lower() != 'nan':
-                        self.group_members_l3.setdefault(grupo3, []).append(nombre)
 
     def _load_initial_workload(self):
         print("Calculating initial workload...")
@@ -130,45 +146,80 @@ class WorkloadBalancer:
         """
         return self.workload.get(name, 0) + self.resolved_workload.get(name, 0) * self.resolved_weight
 
-    def balance_assignment(self, df, prediction_col="predicted_assigned_to", group_col="predicted_assignment_group"):
-        if prediction_col not in df.columns:
+    def balance_assignment(self, df, classification_col="Clasificación", assigned_col="assigned_to"):
+        """Balancea asignaciones usando directamente la columna de `Clasificación`.
+
+        - Busca la primera columna disponible entre `classification_col`, `Clasificacion`, `classification`.
+        - Normaliza la clasificación y la mapea al grupo usando `self.classification_to_group`.
+        - Si no hay mapping exacto, intenta coincidencias parciales.
+        """
+        classification_col_candidates = [classification_col, 'Clasificacion', 'classification']
+
+        def _normalize_text(text):
+            if pd.isna(text):
+                return ''
+            s = str(text)
+            s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('utf-8')
+            s = s.lower().replace('.', '').replace('/', ' ')
+            s = re.sub(r'\s+', ' ', s).strip()
+            return s
+
+        def _singularize_phrase(s):
+            tokens = s.split()
+            tokens = [t[:-1] if t.endswith('s') else t for t in tokens]
+            return ' '.join(tokens)
+
+        # Seleccionar la columna real de clasificación disponible
+        available_cls_col = next((c for c in classification_col_candidates if c in df.columns), None)
+        if not available_cls_col:
+            print(f"Warning: no se encontró ninguna columna de clasificación entre {classification_col_candidates}.")
             return df
-            
-        print("Applying load balancing logic with priorities and thresholds...")
-        
-        groups_assigned = []
+
+        print(f"Aplicando balanceo de carga usando la columna: {available_cls_col}")
+
         new_assignees = []
-        
-        for name in df[prediction_col]:
-            if pd.isna(name):
-                new_assignees.append("NO GROUP FOUND")
-                groups_assigned.append("NO GROUP FOUND")
+
+        for _, row in df.iterrows():
+            classification_val = row.get(available_cls_col, '')
+            if pd.isna(classification_val) or str(classification_val).strip() == '':
+                new_assignees.append("SIN_CLASIFICACION")
                 continue
-                
-            name_str = str(name).strip().upper()
-            
-            if name_str == "TURNO":
-                new_assignees.append("TURNO")
-                groups_assigned.append("TURNO")
+
+            norm_cls = _normalize_text(classification_val)
+            sing = _singularize_phrase(norm_cls)
+
+            # 1) mapping directo desde classification_to_group
+            macrogrupo = None
+            if norm_cls in self.classification_to_group:
+                macrogrupo = self.classification_to_group[norm_cls]
+            elif sing in self.classification_to_group:
+                macrogrupo = self.classification_to_group[sing]
+            else:
+                # 2) búsqueda por inclusión en las claves normalizadas
+                found = None
+                for key_norm, val_group in self.classification_to_group.items():
+                    if norm_cls == key_norm or norm_cls in key_norm or key_norm in norm_cls:
+                        found = val_group
+                        break
+                macrogrupo = found
+
+            if not macrogrupo:
+                # No se pudo mapear: marcar sin macrogrupo
+                new_assignees.append("SIN_ASIGNAR_SIN_GRUPO")
                 continue
-                
-            grupo = self.name_to_group.get(name_str, "NO GROUP FOUND")
-            groups_assigned.append(grupo)
-            
-            l1_candidates = self.group_members_l1.get(grupo, [])
-            l2_candidates = self.group_members_l2.get(grupo, [])
-            l3_candidates = self.group_members_l3.get(grupo, [])
+
+            # Obtener candidatos por nombre de macrogrupo (las keys en group_members_l1 son UPPER)
+            l1_candidates = self.group_members_l1.get(macrogrupo, [])
+            l2_candidates = self.group_members_l2.get(macrogrupo, [])
+            l3_candidates = self.group_members_l3.get(macrogrupo, [])
             
             all_cands = list(set(l1_candidates + l2_candidates + l3_candidates))
             
-            if grupo == "NO GROUP FOUND" or not all_cands:
-                # Keep original if no active members found in any group level
-                new_assignees.append(name_str) 
+            if not all_cands:
+                # Nadie configurado para este macrogrupo
+                new_assignees.append("SIN ASIGNAR (SIN MIEMBROS)") 
                 continue
                 
-            # El umbral se calcula sobre la carga efectiva (no solo abiertos),
-            # de modo que quienes resuelven muchos tickets también contribuyen
-            # a elevar el umbral del grupo y no skippean la selección.
             group_mean = sum(self._effective_workload(m) for m in all_cands) / len(all_cands)
             threshold = group_mean + 3
 
@@ -200,13 +251,10 @@ class WorkloadBalancer:
                 random.shuffle(all_cands)
                 best_member = min(all_cands, key=self._effective_workload)
                 
-            # Registrar la nueva asignación en workload (tickets abiertos).
-            # resolved_workload NO se incrementa aquí; solo crece cuando el ticket se cierra.
             new_assignees.append(best_member)
             self.workload[best_member] = self.workload.get(best_member, 0) + 1
             
-        # Overwrite the prediction column
-        df[prediction_col] = new_assignees
-        df[group_col] = groups_assigned
+        # Creamos/Sobreescribimos la columna de asignación final
+        df[assigned_col] = new_assignees
         
         return df

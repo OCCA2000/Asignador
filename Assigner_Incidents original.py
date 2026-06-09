@@ -63,80 +63,6 @@ def predict_incident_assignments(df_incidentes, balancer, model_type='supervised
             print(f"Error in supervised prediction: {e}")
             return df_incidentes
     
-    elif model_type == 'test_semisupervisado':
-        try:
-            import re, unicodedata
-            import nltk
-            from nltk.corpus import stopwords as nltk_stopwords
-
-            modelo = joblib.load("Analisis/modelo/modelo_Logistic_Regression.joblib")
-            vectorizer = joblib.load("Analisis/modelo/vectorizer_tfidf.joblib")
-
-            nltk.download('stopwords', quiet=True)
-            spanish_stopwords = set(nltk_stopwords.words('spanish'))
-
-            def limpiar_texto(texto):
-                if pd.isnull(texto):
-                    return ""
-                texto = str(texto).lower()
-                texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('utf-8')
-                texto = re.sub(r'[^a-zA-Z0-9\s]', ' ', texto)
-                texto = re.sub(r'\b\d+\b', ' ', texto)
-                texto = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', texto)
-                texto = re.sub(r'\b\w{1,2}\b', ' ', texto)
-                texto = re.sub(r'\s+', ' ', texto).strip()
-                tokens = [t for t in texto.split() if t not in spanish_stopwords]
-                return ' '.join(tokens)
-
-            # Build texto_unificado with same columns used in training
-            df_incidentes['texto_unificado'] = (
-                df_incidentes['short_description'].fillna('') + ' ' +
-                df_incidentes['description'].fillna('') + ' ' +
-                df_incidentes['u_subcategory'].fillna('') + ' ' +
-                df_incidentes['u_subcategory_2'].fillna('')
-            )
-            df_incidentes['texto_unificado'] = df_incidentes['texto_unificado'].apply(limpiar_texto)
-
-            X = vectorizer.transform(df_incidentes['texto_unificado'])
-            df_incidentes['Clasificación'] = modelo.predict(X)
-
-            print(f"\n{'='*55}")
-            print(f"  MODELO: Logistic Regression (semi-supervisado)")
-            print(f"  Tickets procesados : {len(df_incidentes)}")
-            print(f"  Features TF-IDF    : {X.shape[1]}")
-            print(f"{'='*55}")
-            print("\n[Clasificación predicha por el modelo]\n")
-            id_col = next((c for c in ['number', 'Number', 'id'] if c in df_incidentes.columns), None)
-            for _, row in df_incidentes.iterrows():
-                ticket_id = row[id_col] if id_col else "—"
-                desc = str(row.get('short_description', ''))[:60]
-                clase = row['Clasificación']
-                texto = str(row.get('texto_unificado', ''))[:50]
-                print(f"  {ticket_id}  |  {clase:<30}  |  {desc}")
-                print(f"  {'':^10}     texto: {texto}")
-            print(f"\n[Distribución de clases predichas]")
-            for clase, count in df_incidentes['Clasificación'].value_counts().items():
-                print(f"  {clase:<35} {count} ticket(s)")
-            print()
-
-            df_incidentes = apply_shift_validation(df_incidentes)
-            df_incidentes = balancer.balance_assignment(df_incidentes)
-
-            if 'assigned_to' in df_incidentes.columns:
-                print(f"\n[Asignación final tras balanceo]")
-                cols = [c for c in [id_col, 'Clasificación', 'assigned_to'] if c]
-                print(df_incidentes[cols].to_string(index=False))
-
-            # Alinear nombres de columnas con los que espera generate_assignment_reports/main()
-            df_incidentes['predicted_assigned_to'] = df_incidentes['assigned_to']
-            df_incidentes['predicted_assignment_group'] = df_incidentes['Clasificación']
-
-            return df_incidentes
-
-        except Exception as e:
-            print(f"Error in test_semisupervisado prediction: {e}")
-            return df_incidentes
-
     return df_incidentes
 
 def apply_shift_validation(df_incidentes):
@@ -267,7 +193,7 @@ def main():
     
     # Make predictions (using existing trained models)
     print("Making assignment predictions for incidents...")
-    df_incidentes = predict_incident_assignments(df_incidentes, balancer, model_type='test_semisupervisado')
+    df_incidentes = predict_incident_assignments(df_incidentes, balancer, model_type='supervised')
     
     # Generate reports
     generate_assignment_reports(df_incidentes, timing, balancer)

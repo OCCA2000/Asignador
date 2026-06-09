@@ -21,38 +21,44 @@ def generate_report():
     
     workload = balancer.workload
     
-    # 2. Parse Grupos.csv to map groups to users
-    grupos_path = "Entrada/Grupos.csv"
+    # 2. Parse Grupos CSV to map groups to users
+    grupos_path = "Entrada/Grupos - Incidentes(Grupos).csv"
     if not os.path.exists(grupos_path):
         print(f"Error: {grupos_path} not found.")
         return
         
-    df_grupos = pd.read_csv(grupos_path, sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1')
+    try:
+        df_grupos = pd.read_csv(grupos_path, sep=',', encoding='latin-1', dtype=str)
+        if len(df_grupos.columns) == 1:
+            df_grupos = pd.read_csv(grupos_path, sep=';', encoding='latin-1', dtype=str)
+    except Exception:
+        df_grupos = pd.read_csv(grupos_path, sep=';', encoding='latin-1', dtype=str)
     
     # Map: Group Name -> List of Users (dict containing name and active status)
     groups_to_users = {}
     
-    for _, row in df_grupos.iterrows():
-        nombre = str(row.get('NOMBRE', '')).strip().upper()
-        if not nombre or nombre.lower() == 'nan':
+    for col in df_grupos.columns:
+        macrogrupo = str(col).strip().upper()
+        if not macrogrupo or macrogrupo == 'NAN':
             continue
             
-        activo = str(row.get('ACTIVO', '')).strip().upper()
-        
-        # Check all three group columns
-        for col in ['GRUPO 1', 'GRUPO 2', 'GRUPO 3']:
-            grupo = str(row.get(col, '')).strip()
-            if grupo and grupo.lower() != 'nan':
-                if grupo not in groups_to_users:
-                    groups_to_users[grupo] = []
+        if macrogrupo not in groups_to_users:
+            groups_to_users[macrogrupo] = []
+            
+        for val in df_grupos[col]:
+            if pd.isna(val):
+                continue
+            nombre = str(val).strip().upper()
+            if not nombre or nombre == 'NAN':
+                continue
                 
-                # Check if user is already in this group
-                if not any(u['nombre'] == nombre for u in groups_to_users[grupo]):
-                    groups_to_users[grupo].append({
-                        'nombre': nombre,
-                        'activo': activo == 'S',
-                        'tickets': workload.get(nombre, 0)
-                    })
+            # Check if user is already in this group
+            if not any(u['nombre'] == nombre for u in groups_to_users[macrogrupo]):
+                groups_to_users[macrogrupo].append({
+                    'nombre': nombre,
+                    'activo': True, # En el nuevo formato todos se asumen activos
+                    'tickets': workload.get(nombre, 0)
+                })
                     
     # 3. Format Output
     timing = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
