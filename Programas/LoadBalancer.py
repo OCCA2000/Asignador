@@ -6,9 +6,19 @@ from datetime import datetime, timedelta
 from Programas.CleaningData import limpiar_archivo_csv
 import random
 
+def _normalize_text(text):
+    if pd.isna(text):
+        return ''
+    s = str(text)
+    s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('utf-8')
+    s = s.lower().replace('.', '').replace('/', ' ')
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
 class WorkloadBalancer:
-    def __init__(self, grupos_path="Entrada/Grupos - Incidentes(Grupos).csv", assigned_incidents="Entrada/assigned_incidents.csv", assigned_requirements="Entrada/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7):
+    def __init__(self, grupos_path="Entrada/Grupos - Incidentes(Grupos).csv", usuarios_path="Entrada/Grupos - Incidentes(Usuarios).csv", assigned_incidents="Entrada/assigned_incidents.csv", assigned_requirements="Entrada/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7):
         self.grupos_path = grupos_path
+        self.usuarios_path = usuarios_path
         self.assigned_incidents = assigned_incidents
         self.assigned_requirements = assigned_requirements
         self.resolved_weight = resolved_weight
@@ -20,8 +30,11 @@ class WorkloadBalancer:
         self.group_members_l3 = {}
         self.classification_to_group = {}
         self.name_to_group = {}
-        
+        self.username_to_realname = {}
+        self.name_tokens_to_username = {}
+
         self._load_grupos()
+        self._load_usuarios()
         self._load_initial_workload()
 
     def _load_grupos(self):
@@ -39,15 +52,6 @@ class WorkloadBalancer:
             df_grupos = pd.read_csv(self.grupos_path, sep=';', encoding='latin-1', dtype=str)
             
         # El nuevo formato: Las columnas son los Macrogrupos, las filas debajo son los miembros
-        def _normalize_text(text):
-            if pd.isna(text):
-                return ''
-            s = str(text)
-            s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('utf-8')
-            s = s.lower().replace('.', '').replace('/', ' ')
-            s = re.sub(r'\s+', ' ', s).strip()
-            return s
-
         def _singularize_phrase(s):
             tokens = s.split()
             tokens = [t[:-1] if t.endswith('s') else t for t in tokens]
@@ -80,6 +84,58 @@ class WorkloadBalancer:
                 if nombre not in self.workload:
                     self.workload[nombre] = 0
 
+    def _load_usuarios(self):
+        if not os.path.exists(self.usuarios_path):
+            print(f"Warning: {self.usuarios_path} not found.")
+            return
+
+        try:
+            df_usuarios = pd.read_csv(self.usuarios_path, dtype=str)
+            df_usuarios.columns = [str(c).strip() for c in df_usuarios.columns]
+
+            if 'Nombre' not in df_usuarios.columns or 'Usuario' not in df_usuarios.columns:
+                print(f"Warning: {self.usuarios_path} missing expected columns 'Nombre'/'Usuario'.")
+                return
+
+            for _, row in df_usuarios.iterrows():
+                usuario_raw = row.get('Usuario')
+                nombre_raw = row.get('Nombre')
+                if pd.isna(usuario_raw) or pd.isna(nombre_raw):
+                    continue
+
+                username = str(usuario_raw).strip().upper()
+                nombre = str(nombre_raw).strip().upper()
+                if not username or not nombre:
+                    continue
+
+                self.username_to_realname[username] = nombre
+
+                token_key = ' '.join(sorted(_normalize_text(nombre).upper().split()))
+                if token_key:
+                    self.name_tokens_to_username[token_key] = username
+        except Exception as e:
+            print(f"Warning: failed to load {self.usuarios_path}: {e}")
+
+    def _canonical_assignee(self, name):
+        """Resuelve un valor de `assigned_to` (username o nombre real) al username canónico.
+
+        Permite combinar la carga de tickets registrados con el username (ej. LJDELGAD)
+        con la carga de tickets antiguos registrados con el nombre completo
+        (ej. LEONELA JACKELINE DELGADO MENDIETA), evitando que se traten como dos
+        personas distintas en self.workload / self.resolved_workload.
+        """
+        name_upper = str(name).strip().upper()
+        if name_upper in self.username_to_realname:
+            return name_upper
+
+        token_key = ' '.join(sorted(_normalize_text(name_upper).upper().split()))
+        return self.name_tokens_to_username.get(token_key, name_upper)
+
+    def display_name(self, key):
+        if key in self.username_to_realname:
+            return f"{self.username_to_realname[key]} ({key})"
+        return key
+
     def _load_initial_workload(self):
         print("Calculating initial workload...")
         for file_path in [self.assigned_incidents, self.assigned_requirements]:
@@ -109,7 +165,7 @@ class WorkloadBalancer:
                             fechas = pd.to_datetime(df_resolved['resolved_at'], dayfirst=True, errors='coerce')
                             df_resolved = df_resolved[fechas >= cutoff]
                         for name in df_resolved['assigned_to'].dropna():
-                            name_str = str(name).strip().upper()
+                            name_str = self._canonical_assignee(name)
                             self.resolved_workload[name_str] = self.resolved_workload.get(name_str, 0) + 1
 
                     # Solo los tickets abiertos representan carga activa real (workload)
@@ -118,7 +174,7 @@ class WorkloadBalancer:
 
                     if 'assigned_to' in df.columns:
                         for name in df['assigned_to'].dropna():
-                            name_str = str(name).strip().upper()
+                            name_str = self._canonical_assignee(name)
                             if name_str in self.workload:
                                 self.workload[name_str] += 1
                             else:
@@ -154,15 +210,6 @@ class WorkloadBalancer:
         - Si no hay mapping exacto, intenta coincidencias parciales.
         """
         classification_col_candidates = [classification_col, 'Clasificacion', 'classification']
-
-        def _normalize_text(text):
-            if pd.isna(text):
-                return ''
-            s = str(text)
-            s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('utf-8')
-            s = s.lower().replace('.', '').replace('/', ' ')
-            s = re.sub(r'\s+', ' ', s).strip()
-            return s
 
         def _singularize_phrase(s):
             tokens = s.split()

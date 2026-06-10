@@ -56,6 +56,7 @@ def generate_report():
             if not any(u['nombre'] == nombre for u in groups_to_users[macrogrupo]):
                 groups_to_users[macrogrupo].append({
                     'nombre': nombre,
+                    'display': balancer.display_name(nombre),
                     'activo': True, # En el nuevo formato todos se asumen activos
                     'tickets': workload.get(nombre, 0)
                 })
@@ -82,7 +83,7 @@ def generate_report():
         total_tickets = 0
         for user in users:
             status = "" if user['activo'] else " [INACTIVE]"
-            report_lines.append(f"{user['nombre'].ljust(45)} {user['tickets']:>3} tickets{status}")
+            report_lines.append(f"{user['display'].ljust(50)} {user['tickets']:>3} tickets{status}")
             total_tickets += user['tickets']
             
         report_lines.append("-" * 65)
