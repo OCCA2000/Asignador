@@ -32,6 +32,7 @@ class WorkloadBalancer:
         self.name_to_group = {}
         self.username_to_realname = {}
         self.name_tokens_to_username = {}
+        self.active_usernames = set()
 
         self._load_grupos()
         self._load_usuarios()
@@ -90,7 +91,15 @@ class WorkloadBalancer:
             return
 
         try:
-            df_usuarios = pd.read_csv(self.usuarios_path, dtype=str)
+            try:
+                # Intentar leer por coma primero
+                df_usuarios = pd.read_csv(self.usuarios_path, sep=',', encoding='latin-1', dtype=str)
+                if len(df_usuarios.columns) == 1:
+                    # Fallback a punto y coma
+                    df_usuarios = pd.read_csv(self.usuarios_path, sep=';', encoding='latin-1', dtype=str)
+            except Exception:
+                df_usuarios = pd.read_csv(self.usuarios_path, sep=';', encoding='latin-1', dtype=str)
+
             df_usuarios.columns = [str(c).strip() for c in df_usuarios.columns]
 
             if 'Nombre' not in df_usuarios.columns or 'Usuario' not in df_usuarios.columns:
@@ -113,6 +122,11 @@ class WorkloadBalancer:
                 token_key = ' '.join(sorted(_normalize_text(nombre).upper().split()))
                 if token_key:
                     self.name_tokens_to_username[token_key] = username
+
+                estado_raw = row.get('Estado')
+                is_active = str(estado_raw).strip() == '1' if not pd.isna(estado_raw) else True
+                if is_active:
+                    self.active_usernames.add(username)
         except Exception as e:
             print(f"Warning: failed to load {self.usuarios_path}: {e}")
 
@@ -130,6 +144,21 @@ class WorkloadBalancer:
 
         token_key = ' '.join(sorted(_normalize_text(name_upper).upper().split()))
         return self.name_tokens_to_username.get(token_key, name_upper)
+
+    def is_active(self, name):
+        """Devuelve True si el usuario está activo (Estado=1) en el CSV de usuarios.
+
+        Acepta tanto username (ej. LJDELGAD) como nombre completo (ej. LEONELA JACKELINE DELGADO).
+        Si no hay información de estado cargada, asume activo.
+        """
+        if not self.active_usernames:
+            return True
+        name_upper = str(name).strip().upper()
+        if name_upper in self.active_usernames:
+            return True
+        token_key = ' '.join(sorted(_normalize_text(name_upper).upper().split()))
+        username = self.name_tokens_to_username.get(token_key)
+        return username in self.active_usernames if username else False
 
     def display_name(self, key):
         if key in self.username_to_realname:
@@ -175,10 +204,7 @@ class WorkloadBalancer:
                     if 'assigned_to' in df.columns:
                         for name in df['assigned_to'].dropna():
                             name_str = self._canonical_assignee(name)
-                            if name_str in self.workload:
-                                self.workload[name_str] += 1
-                            else:
-                                self.workload[name_str] = 1
+                            self.workload[name_str] = self.workload.get(name_str, 0) + 1
                 except Exception as e:
                     print(f"Error processing {file_path} for workload: {e}")
                 finally:
@@ -256,9 +282,9 @@ class WorkloadBalancer:
                 continue
 
             # Obtener candidatos por nombre de macrogrupo (las keys en group_members_l1 son UPPER)
-            l1_candidates = self.group_members_l1.get(macrogrupo, [])
-            l2_candidates = self.group_members_l2.get(macrogrupo, [])
-            l3_candidates = self.group_members_l3.get(macrogrupo, [])
+            l1_candidates = [m for m in self.group_members_l1.get(macrogrupo, []) if self.is_active(m)]
+            l2_candidates = [m for m in self.group_members_l2.get(macrogrupo, []) if self.is_active(m)]
+            l3_candidates = [m for m in self.group_members_l3.get(macrogrupo, []) if self.is_active(m)]
             
             all_cands = list(set(l1_candidates + l2_candidates + l3_candidates))
             

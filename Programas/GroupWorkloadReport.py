@@ -57,7 +57,7 @@ def generate_report():
                 groups_to_users[macrogrupo].append({
                     'nombre': nombre,
                     'display': balancer.display_name(nombre),
-                    'activo': True, # En el nuevo formato todos se asumen activos
+                    'activo': balancer.is_active(nombre),  #estado real del usuario 
                     'tickets': workload.get(nombre, 0)
                 })
                     
