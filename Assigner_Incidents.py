@@ -218,7 +218,8 @@ def generate_assignment_reports(df_incidentes, timing, balancer=None):
             f.write("-" * 50 + "\n")
             sorted_workload = sorted(balancer.workload.items(), key=lambda item: item[1], reverse=True)
             for person, count in sorted_workload:
-                f.write(f"{person.ljust(40)} {count} tickets\n")
+                display = balancer.display_name(person)
+                f.write(f"{display.ljust(50)} {count} tickets\n")
             f.write("\n")
     
     print(f"Summary report saved to: {summary_path}")
