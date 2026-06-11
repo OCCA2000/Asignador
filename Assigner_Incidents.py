@@ -63,6 +63,79 @@ def predict_incident_assignments(df_incidentes, balancer, model_type='supervised
             print(f"Error in supervised prediction: {e}")
             return df_incidentes
     
+    elif model_type == 'semisupervised':
+        try:
+            import re, unicodedata
+            import nltk
+            from nltk.corpus import stopwords as nltk_stopwords
+
+            modelo = joblib.load(f"{model_path}/modelo_Logistic_Regression.joblib")
+            vectorizer = joblib.load(f"{model_path}/vectorizer_tfidf.joblib")
+
+            nltk.download('stopwords', quiet=True)
+            spanish_stopwords = set(nltk_stopwords.words('spanish'))
+
+            def limpiar_texto(texto):
+                if pd.isnull(texto):
+                    return ""
+                texto = str(texto).lower()
+                texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('utf-8')
+                texto = re.sub(r'[^a-zA-Z0-9\s]', ' ', texto)
+                texto = re.sub(r'\b\d+\b', ' ', texto)
+                texto = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', texto)
+                texto = re.sub(r'\b\w{1,2}\b', ' ', texto)
+                texto = re.sub(r'\s+', ' ', texto).strip()
+                tokens = [t for t in texto.split() if t not in spanish_stopwords]
+                return ' '.join(tokens)
+
+            # Build texto_unificado with same columns used in training
+            df_incidentes['texto_unificado'] = (
+                df_incidentes['short_description'].fillna('') + ' ' +
+                df_incidentes['description'].fillna('') + ' ' +
+                df_incidentes['u_subcategory'].fillna('') + ' ' +
+                df_incidentes['u_subcategory_2'].fillna('')
+            )
+            df_incidentes['texto_unificado'] = df_incidentes['texto_unificado'].apply(limpiar_texto)
+            
+            X = vectorizer.transform(df_incidentes['texto_unificado'])
+            df_incidentes['Clasificación'] = modelo.predict(X)
+
+            print(f"\n{'='*55}")
+            print(f"  MODELO: Logistic Regression (semi-supervisado)")
+            print(f"  Tickets procesados : {len(df_incidentes)}")
+            print(f"  Features TF-IDF    : {X.shape[1]}")
+            print(f"{'='*55}")
+            print("\n[Clasificación predicha por el modelo]\n")
+            id_col = next((c for c in ['number', 'Number', 'id'] if c in df_incidentes.columns), None)
+            for _, row in df_incidentes.iterrows():
+                ticket_id = row[id_col] if id_col else "—"
+                desc = str(row.get('short_description', ''))[:60]
+                clase = row['Clasificación']
+                texto = str(row.get('texto_unificado', ''))[:50]
+                print(f"  {ticket_id}  |  {clase:<30}  |  {desc}")
+                print(f"  {'':^10}     texto: {texto}")
+            print(f"\n[Distribución de clases predichas]")
+            for clase, count in df_incidentes['Clasificación'].value_counts().items():
+                print(f"  {clase:<35} {count} ticket(s)")
+
+            df_incidentes = apply_shift_validation(df_incidentes)
+            df_incidentes = balancer.balance_assignment(df_incidentes)
+
+            if 'assigned_to' in df_incidentes.columns:
+                print(f"\n[Asignación final tras balanceo]")
+                cols = [c for c in [id_col, 'Clasificación', 'assigned_to'] if c]
+                print(df_incidentes[cols].to_string(index=False))
+
+            # Alinear nombres de columnas con los que espera generate_assignment_reports/main()
+            df_incidentes['predicted_assigned_to'] = df_incidentes['assigned_to']
+            df_incidentes['predicted_assignment_group'] = df_incidentes['Clasificación']
+
+            return df_incidentes
+
+        except Exception as e:
+            print(f"Error in test_semisupervisado prediction: {e}")
+            return df_incidentes
+
     return df_incidentes
 
 def apply_shift_validation(df_incidentes):
@@ -96,12 +169,25 @@ def apply_shift_validation(df_incidentes):
     print(f"Found {monitoreo_count} incidents matching Monitoreo contact type")
     print(f"Total {total_shift_count} incidents assigned to TURNO")
     
-    # Apply the shift rule
+    # Asignar por clasificación para que LoadBalancer use la clasificación como clave
+    # - Batch subcategory -> 'reportes batch'
+    # - Monitoreo contact type -> 'trickle feed'
+    # - Operación TI (sin subcategory Batch) -> 'trickle feed' (fallback)
+    df_incidentes.loc[batch_subcategory_mask, 'Clasificación'] = 'reportes batch'
+    df_incidentes.loc[monitoreo_mask, 'Clasificación'] = 'trickle feed'
+    df_incidentes.loc[batch_category_mask & ~batch_subcategory_mask, 'Clasificación'] = 'trickle feed'
+
+    # Recount how many incidents were assigned a clasificación por turno
+    assigned_by_class_mask = df_incidentes['Clasificación'].isin(['reportes batch', 'trickle feed'])
+    
+    df_incidentes.loc[assigned_by_class_mask, "predicted_assigned_to"] = "TURNO"
     df_incidentes.loc[shift_mask, "predicted_assigned_to"] = "TURNO"
-    
-    if total_shift_count > 0:
-        print(f"Assigned {total_shift_count} incidents to TURNO based on shift validation rules")
-    
+        
+    assigned_by_class_count = int(assigned_by_class_mask.sum())
+
+    if assigned_by_class_count > 0:
+        print(f"Assigned {assigned_by_class_count} incidents to Turno via Clasificación ('reportes batch' or 'trickle feed')")
+
     return df_incidentes
 
 def generate_assignment_reports(df_incidentes, timing, balancer=None):
@@ -135,7 +221,9 @@ def generate_assignment_reports(df_incidentes, timing, balancer=None):
             f.write("-" * 50 + "\n")
             sorted_workload = sorted(balancer.workload.items(), key=lambda item: item[1], reverse=True)
             for person, count in sorted_workload:
-                f.write(f"{person.ljust(40)} {count} tickets\n")
+                display = balancer.display_name(person)
+                status = "" if balancer.is_active(person) else " [INACTIVE]"
+                f.write(f"{display.ljust(50)} {count} tickets{status}\n")
             f.write("\n")
     
     print(f"Summary report saved to: {summary_path}")
@@ -184,7 +272,7 @@ def main():
     
     # Make predictions (using existing trained models)
     print("Making assignment predictions for incidents...")
-    df_incidentes = predict_incident_assignments(df_incidentes, balancer, model_type='supervised')
+    df_incidentes = predict_incident_assignments(df_incidentes, balancer, model_type='semisupervised')
     
     # Generate reports
     generate_assignment_reports(df_incidentes, timing, balancer)
