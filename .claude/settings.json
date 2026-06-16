@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command ' *)",
+      "Bash(python3)",
+      "Bash(python -c \"import pandas as pd; df = pd.read_csv\\('c:/ASIGNADOR/Asignador/Data/cluster_profile.csv', sep=';', encoding='utf-8-sig'\\); print\\(df[['cluster_id','cantidad','top_terms_full']].to_string\\(\\)\\)\")",
+      "Bash(cd /c/ASIGNADOR/Asignador/Analisis && wc -l *.ipynb)",
+      "Read(//c/c/ASIGNADOR/Asignador/**)",
+      "PowerShell(cd C:\\\\ASIGNADOR\\\\Asignador\\\\Analisis; $nb = Get-Content 'EDA_Categorizacion_Requerimientos.ipynb' | ConvertFrom-Json; [System.Environment]::CurrentDirectory; $cells = @\\(\\); foreach \\($cell in $nb.cells\\) { if \\($cell.cell_type -eq 'code'\\) { $src = $cell.source -join ''; if \\($src.Length -gt 10 -and -not [String]::IsNullOrWhiteSpace\\($src\\)\\) { $cells += @{ num = $cells.Count + 1; source = $src } } } }; $cells | Select-Object @{N='CellNum';E={$_.num}}, @{N='SourceLength';E={$_.source.Length}} | Format-Table)",
+      "Bash(python -c ' *)",
+      "Bash(python create_notebook.py)",
+      "PowerShell(python -m ipykernel --version 2>&1)",
+      "PowerShell(python -m jupyter kernelspec list 2>&1)"
+    ]
+  }
+}
