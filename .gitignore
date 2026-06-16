@@ -24,7 +24,7 @@ wheels/
 *.pkl
 
 # Machine Learning Models
-#*.joblib
+*.joblib
 *.pkl
 
 # Data files
