@@ -203,18 +203,18 @@ def predict_requirement_assignments(df_requerimientos, balancer):
     print("Predicting requirement assignments using supervisado model...")
 
     try:
-        # Load latest model and vectorizer
-        modelos     = sorted(glob.glob("Modelos/modelo_req_*.joblib"))
-        vectorizers = sorted(glob.glob("Modelos/vectorizer_req_tfidf_*.joblib"))
+        # Load model and vectorizer
+        ruta_modelo     = "Modelos/modelo_Random_Forest_Requerimientos.joblib"
+        ruta_vectorizer = "Modelos/vectorizer_Requerimientos.joblib"
 
-        if not modelos or not vectorizers:
-            print("Error: no model files found in Modelos/. Run Supervisado_Requerimientos.ipynb first.")
+        if not os.path.exists(ruta_modelo) or not os.path.exists(ruta_vectorizer):
+            print("Error: no se encontraron los archivos del modelo en Modelos/. Ejecuta Supervisado_Requerimientos.ipynb primero.")
             return df_requerimientos
 
-        modelo     = joblib.load(modelos[-1])
-        vectorizer = joblib.load(vectorizers[-1])
-        print(f"Model:      {modelos[-1]}")
-        print(f"Vectorizer: {vectorizers[-1]}")
+        modelo     = joblib.load(ruta_modelo)
+        vectorizer = joblib.load(ruta_vectorizer)
+        print(f"Model:      {ruta_modelo}")
+        print(f"Vectorizer: {ruta_vectorizer}")
 
         # Build preprocessing pipeline
         print("Loading spaCy model...")
@@ -326,7 +326,8 @@ def generate_assignment_reports(df_requerimientos, timing, balancer=None):
             sorted_workload = sorted(balancer.workload.items(), key=lambda item: item[1], reverse=True)
             for person, count in sorted_workload:
                 display = balancer.display_name(person)
-                f.write(f"{display.ljust(50)} {count} tickets\n")
+                status = "" if balancer.is_active(person) else " [INACTIVE]"
+                f.write(f"{display.ljust(50)} {count} tickets{status}\n")
             f.write("\n")
 
     print(f"Summary report saved to: {summary_path}")
