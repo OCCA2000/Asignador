@@ -12,10 +12,6 @@ from Programas.LoadBalancer import WorkloadBalancer
 
 # ── Preprocessing pipeline (identical to Supervisado_Requerimientos.ipynb) ──────
 
-def _load_nlp():
-    import spacy
-    return spacy.load('es_core_news_md', disable=['ner', 'parser', 'senter'])
-
 def _build_stopwords():
     import nltk
     from nltk.corpus import stopwords as nltk_stopwords
@@ -94,14 +90,13 @@ _BOILERPLATE_REGEX = re.compile('|'.join(_BOILERPLATE_PATTERNS))
 _PREFIX_REGEX = re.compile(
     r'^(con|con el|con la|con los|con las|para|sobre|del|de la|de los|de las)\s+'
 )
-_PLACEHOLDERS = {'url', 'email', 'fecha', 'num_largo', 'num'}
 
 
-def _normalize_text_req(texto, nlp_es):
+def _normalize_text_req(texto):
     if pd.isna(texto):
         return ''
     t = str(texto).strip().lower()
-    t = unicodedata.normalize('NFKC', t)
+    t = unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8', errors='ignore')
     t = re.sub(r'(https?://\S+|www\.\S+)', ' url ', t)
     t = re.sub(r'\b[\w\.-]+@[\w\.-]+\.\w+\b', ' email ', t)
     t = re.sub(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', ' fecha ', t)
@@ -111,21 +106,6 @@ def _normalize_text_req(texto, nlp_es):
     t = re.sub(r'[^\w\s]', ' ', t)
     t = re.sub(r'\s+', ' ', t).strip()
     t = re.sub(r'(.)\1{3,}', ' ', t)
-    t = re.sub(r'\s+', ' ', t).strip()
-    doc = nlp_es(t)
-    lemmas = []
-    for token in doc:
-        if token.is_space:
-            continue
-        raw = token.lower_.strip()
-        if raw in _PLACEHOLDERS:
-            lemmas.append(raw)
-        else:
-            lemma = token.lemma_.lower().strip()
-            if lemma:
-                lemmas.append(lemma)
-    t = ' '.join(lemmas)
-    t = unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8', errors='ignore')
     t = re.sub(r'[^a-z0-9\s]', ' ', t)
     t = re.sub(r'\s+', ' ', t).strip()
     return t
@@ -204,7 +184,7 @@ def predict_requirement_assignments(df_requerimientos, balancer):
 
     try:
         # Load model and vectorizer
-        ruta_modelo     = "Modelos/modelo_Random_Forest_Requerimientos.joblib"
+        ruta_modelo     = "Modelos/modelo_Requerimientos.joblib"
         ruta_vectorizer = "Modelos/vectorizer_Requerimientos.joblib"
 
         if not os.path.exists(ruta_modelo) or not os.path.exists(ruta_vectorizer):
@@ -216,17 +196,9 @@ def predict_requirement_assignments(df_requerimientos, balancer):
         print(f"Model:      {ruta_modelo}")
         print(f"Vectorizer: {ruta_vectorizer}")
 
-        # Build preprocessing pipeline
-        print("Loading spaCy model...")
-        nlp_es = _load_nlp()
-
         print("Normalizing text...")
-        df_requerimientos['short_norm'] = df_requerimientos['short_description'].apply(
-            lambda t: _normalize_text_req(t, nlp_es)
-        )
-        df_requerimientos['desc_norm'] = df_requerimientos['description'].apply(
-            lambda t: _normalize_text_req(t, nlp_es)
-        )
+        df_requerimientos['short_norm'] = df_requerimientos['short_description'].apply(_normalize_text_req)
+        df_requerimientos['desc_norm'] = df_requerimientos['description'].apply(_normalize_text_req)
 
         df_requerimientos['short_core'] = df_requerimientos['short_norm'].apply(_strip_boilerplate)
         df_requerimientos['desc_core']  = df_requerimientos['desc_norm'].apply(_strip_boilerplate)
