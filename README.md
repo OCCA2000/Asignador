@@ -17,15 +17,32 @@ Este sistema utiliza modelos de Machine Learning para asignar automáticamente i
 
 ```
 Asignador/
-├── Assigner_Incidents.py    # Programa principal para incidentes
-├── Assigner_Requirements.py # Programa principal para requerimientos
+├── Assigner_Incidents.py       # Programa principal para incidentes
+├── Assigner_Requirements.py    # Programa principal para requerimientos
 ├── Programas/
-│   ├── CleaningData.py      # Funciones de limpieza de datos
-│   └── Trainer.py          # Entrenamiento de modelos
-├── Incidentes/              # Modelos y datos de incidentes
-├── Requerimientos/           # Modelos y datos de requerimientos
-├── Entrada/                # Archivos de entrada
-└── Salida/                 # Reportes generados
+│   ├── CleaningData.py         # Funciones de limpieza de datos
+│   ├── Trainer.py              # Entrenamiento de modelos (Supervisados y No supervisados)
+│   ├── LoadBalancer.py         # Balanceador de carga de trabajo
+│   ├── GroupWorkloadReport.py  # Generador de reportes de carga de grupos
+│   └── GroupMapper.py          # Mapeador de grupos primarios
+├── Incidentes/                 # Modelos y datos de incidentes
+│   ├── Entrenamiento/          # Notebooks de EDA y datasets históricos
+│   │   ├── Datos/
+│   │   ├── Semisupervisado/    # Guarda modelos en semisupervised_model/ y CSV en Resultados/
+│   │   ...
+│   ├── supervised_model/       # Modelos supervisados para incidentes
+│   ├── semisupervised_model/   # Modelos semisupervisados para incidentes
+│   └── unsupervised_model/     # Modelos no supervisados (clusters) para incidentes
+├── Requerimientos/             # Modelos y datos de requerimientos
+│   ├── Entrenamiento/          # Notebooks de EDA y datasets históricos
+│   │   ├── Datos/
+│   │   ├── Semisupervisado/    # Guarda modelos en semisupervised_model/ y CSV en Resultados/
+│   │   ...
+│   ├── supervised_model/       # Modelos supervisados para requerimientos
+│   ├── semisupervised_model/   # Modelos semisupervisados para requerimientos
+│   └── unsupervised_model/     # Modelos no supervisados (clusters) para requerimientos
+├── Entrada/                    # Archivos de entrada para procesamiento (incident.csv, requirements.csv)
+└── Salida/                     # Reportes y CSVs finales de asignación generados
 ```
 
 ## Installation
@@ -36,23 +53,32 @@ Asignador/
 - scikit-learn
 - joblib
 - requests (para API integration)
+- nltk
+- matplotlib (para graficar en notebooks)
+- seaborn (para visualizaciones)
+- imbalanced-learn (para RandomOverSampler)
 
 ### Setup
 1. Clonar el repositorio
-2. Instalar dependencias:
+2. Instalar dependencias globales:
    ```bash
-   pip install pandas scikit-learn joblib requests
+   pip install pandas scikit-learn joblib requests nltk matplotlib seaborn imbalanced-learn
    ```
 
 ## Usage
 
 ### Entrenar Modelos
+
+Puedes entrenar los modelos supervisados y no supervisados (DBSCAN auto-clustering) ejecutando el master training script desde cualquier carpeta (raíz del proyecto o `Programas/`):
 ```bash
-cd Programas
-python Trainer.py
+python Programas/Trainer.py
 ```
+Este script actualizará de manera automática los modelos y archivos serializados dentro de las carpetas de modelos correspondientes (`supervised_model/` y `unsupervised_model/`).
+
+Para los flujos semisupervisados, puedes ejecutar los notebooks interactivos en `Entrenamiento/Semisupervisado/`. Estos guardarán sus reportes de análisis en un subdirectorio local llamado `Resultados/` e implementarán los modelos resultantes directamente en la carpeta de producción `semisupervised_model/`.
 
 ### Ejecutar Asignación
+Desde la raíz del proyecto:
 ```bash
 python Assigner_Incidents.py
 python Assigner_Requirements.py

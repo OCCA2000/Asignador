@@ -32,6 +32,9 @@ wheels/
 *.xlsx
 *.xls
 
+# Input directories
+Entrada/
+
 # Output directories
 Salida/
 logs/

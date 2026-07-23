@@ -19,13 +19,12 @@ import joblib
 # -----------------------------
 # Configuration
 # -----------------------------
-CSV_PATH = "requerimientos_depurado.csv"
-OUTPUT_DIR = "unsupervised_model"
+CSV_PATH = "../Datos/incidentes_depurado.csv"
 RANDOM_STATE = 42
 
 # DBSCAN parameters (key knobs)
 EPS = 0.7          # neighborhood radius (tune this)
-MIN_SAMPLES = 15   # minimum points to form a cluster
+MIN_SAMPLES = 10   # minimum points to form a cluster
 
 
 # -----------------------------
@@ -42,10 +41,14 @@ def normalize_text(s: str) -> str:
 
 def build_text(row: pd.Series) -> str:
     parts = [
-        row.get("requested_for.title",""),
-        row.get("requested_for.company",""),
-        row.get("short_description",""),
-        row.get("description","")
+        row.get("u_subcategory_2", ""),
+        row.get("cmdb_ci_business_app", ""),
+        row.get("short_description", ""),
+        row.get("u_affected_user.title", ""),
+        row.get("u_affected_user.department", ""),
+        row.get("u_affected_user.company", ""),
+        row.get("location.cmn_location_type", ""),
+        row.get("description", "")
     ]
     return normalize_text(" ".join(p for p in parts if isinstance(p, str)))
 
@@ -101,7 +104,7 @@ features = FeatureUnion([word_tfidf, char_tfidf])
 # -----------------------------
 pipeline = Pipeline([
     ("features", features),
-    ("svd", TruncatedSVD(n_components=100, random_state=RANDOM_STATE)),
+    ("svd", TruncatedSVD(n_components=90, random_state=RANDOM_STATE)),
     ("norm", Normalizer(copy=False)),
     ("cluster", DBSCAN(
         eps=EPS,
@@ -125,7 +128,7 @@ df["cluster_id"] = cluster_ids
 n_clusters = len(set(cluster_ids)) - (1 if -1 in cluster_ids else 0)
 n_noise = np.sum(cluster_ids == -1)
 
-print("\n✅ Auto‑clustering complete")
+print("\n[OK] Auto-clustering complete")
 print("Detected clusters:", n_clusters)
 print("Noise / outliers:", n_noise)
 
@@ -134,17 +137,16 @@ print(df["cluster_id"].value_counts().sort_index())
 
 
 # -----------------------------
-# Save artifacts
-# -----------------------------
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+output_dir = "../../unsupervised_model"
+os.makedirs(output_dir, exist_ok=True)
 
 joblib.dump(
     pipeline,
-    f"{OUTPUT_DIR}/requirements_clustering_auto_pipeline.joblib"
+    os.path.join(output_dir, "incident_clustering_auto_pipeline.joblib")
 )
 
 df[["cluster_id", "text"]].to_csv(
-    f"{OUTPUT_DIR}/clustered_requrirements_auto.csv",
+    os.path.join(output_dir, "clustered_incidents_auto.csv"),
     index=False,
     encoding="utf-8"
 )

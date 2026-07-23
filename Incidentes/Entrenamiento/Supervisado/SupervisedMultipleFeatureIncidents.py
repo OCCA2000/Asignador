@@ -11,7 +11,7 @@ from sklearn.svm import LinearSVC
 from sklearn.metrics import classification_report, accuracy_score, f1_score
 import joblib
 
-CSV_PATH = "requerimientos_depurado.csv"
+CSV_PATH = "../Datos/incidentes_depurado.csv"
 
 def normalize_text(s: str) -> str:
     if not isinstance(s, str): return ""
@@ -23,9 +23,13 @@ def normalize_text(s: str) -> str:
 def build_text(row):
     # mapea app primero para dar señal fuerte
     parts = [
-        row.get("requested_for.title",""),
-        row.get("requested_for.company",""),
+        row.get("u_subcategory_2",""),
+        row.get("cmdb_ci_business_app",""),
         row.get("short_description",""),
+        row.get("u_affected_user.title",""),
+        row.get("u_affected_user.department",""),
+        row.get("u_affected_user.company",""),
+        row.get("location.cmn_location_type",""),
         row.get("description","")
     ]
     return normalize_text(" ".join([p for p in parts if isinstance(p, str)]))
@@ -34,15 +38,21 @@ def build_text(row):
 df = pd.read_csv(CSV_PATH, sep=';', dtype=str, engine='python',
                  on_bad_lines='skip', encoding='latin-1')
 need = [
-        "requested_for.title",
-        "requested_for.company",
+        "u_subcategory_2",
+        "cmdb_ci_business_app",
         "short_description",
+        "u_affected_user.title",
+        "u_affected_user.department",
+        "u_affected_user.company",
+        "location.cmn_location_type",
         "description",
         "assigned_to"]
 for c in need:
     if c not in df.columns:
         raise ValueError(f"Falta columna: {c}")
         
+df['cmdb_ci_business_app'] = df['cmdb_ci_business_app'].astype(str).fillna(df['cmdb_ci'])
+
 df["text"] = df.apply(build_text, axis=1)
 df["assigned_to"] = df["assigned_to"].fillna("DESCONOCIDO").str.strip()
 df = df[(df["text"].str.len() > 3) & (df["assigned_to"].str.len() > 0)].copy()
@@ -57,8 +67,6 @@ y = df["assigned_to"].values
 
 le = LabelEncoder()
 y_enc = le.fit_transform(y)
-
-print(y_enc)
 
 X_train, X_valid, y_train, y_valid = train_test_split(
     X, y_enc, test_size=0.2, random_state=42, stratify=y_enc
@@ -111,8 +119,9 @@ print(f"Accuracy:  {acc:.4f}")
 print(f"F1-macro:  {f1_macro:.4f}")
 print(f"F1-micro:  {f1_micro:.4f}")
 print("\nReporte de clasificación:")
-print(classification_report(y_valid, y_pred, target_names=le.inverse_transform(np.unique(y_valid))))
+print(classification_report(y_valid, y_pred, labels=range(len(le.classes_)), target_names=le.classes_))
 
-os.makedirs("supervised_model", exist_ok=True)
-joblib.dump(best, "supervised_model/assigned_to_tfidf_svm.joblib")
-joblib.dump(le,   "supervised_model/label_encoder.joblib")
+output_dir = "../../supervised_model"
+os.makedirs(output_dir, exist_ok=True)
+joblib.dump(best, os.path.join(output_dir, "assigned_to_tfidf_svm.joblib"))
+joblib.dump(le,   os.path.join(output_dir, "label_encoder.joblib"))
