@@ -57,6 +57,9 @@ def predict_incident_assignments(df_incidentes, balancer, model_type='supervised
             # Add group prediction and load balance
             df_incidentes = balancer.balance_assignment(df_incidentes)
             
+            df_incidentes['predicted_assigned_to'] = df_incidentes['assigned_to']
+            df_incidentes['predicted_assignment_group'] = df_incidentes['Clasificación']
+            
             return df_incidentes
             
         except Exception as e:
@@ -167,27 +170,8 @@ def apply_shift_validation(df_incidentes):
     print(f"Found {batch_category_count} incidents matching Operación TI category")
     print(f"Found {batch_subcategory_count} incidents matching Batch subcategory")
     print(f"Found {monitoreo_count} incidents matching Monitoreo contact type")
-    print(f"Total {total_shift_count} incidents assigned to TURNO")
+    print(f"Total {total_shift_count} incidents matching metadata shift rules")
     
-    # Asignar por clasificación para que LoadBalancer use la clasificación como clave
-    # - Batch subcategory -> 'reportes batch'
-    # - Monitoreo contact type -> 'trickle feed'
-    # - Operación TI (sin subcategory Batch) -> 'trickle feed' (fallback)
-    df_incidentes.loc[batch_subcategory_mask, 'Clasificación'] = 'reportes batch'
-    df_incidentes.loc[monitoreo_mask, 'Clasificación'] = 'trickle feed'
-    df_incidentes.loc[batch_category_mask & ~batch_subcategory_mask, 'Clasificación'] = 'trickle feed'
-
-    # Recount how many incidents were assigned a clasificación por turno
-    assigned_by_class_mask = df_incidentes['Clasificación'].isin(['reportes batch', 'trickle feed'])
-    
-    df_incidentes.loc[assigned_by_class_mask, "predicted_assigned_to"] = "TURNO"
-    df_incidentes.loc[shift_mask, "predicted_assigned_to"] = "TURNO"
-        
-    assigned_by_class_count = int(assigned_by_class_mask.sum())
-
-    if assigned_by_class_count > 0:
-        print(f"Assigned {assigned_by_class_count} incidents to Turno via Clasificación ('reportes batch' or 'trickle feed')")
-
     return df_incidentes
 
 def generate_assignment_reports(df_incidentes, timing, balancer=None):

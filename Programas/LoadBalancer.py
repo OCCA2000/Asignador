@@ -16,13 +16,14 @@ def _normalize_text(text):
     return s
 
 class WorkloadBalancer:
-    def __init__(self, grupos_path="Entrada/Grupos - Incidentes(Grupos).csv", usuarios_path="Entrada/Grupos - Usuarios.csv", assigned_incidents="Entrada/assigned_incidents.csv", assigned_requirements="Entrada/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7):
+    def __init__(self, grupos_path="Entrada/Grupos - Incidentes(Grupos).csv", usuarios_path="Entrada/Grupos - Usuarios.csv", assigned_incidents="Entrada/assigned_incidents.csv", assigned_requirements="Entrada/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7, turnos_path="Entrada/Turnos.csv"):
         self.grupos_path = grupos_path
         self.usuarios_path = usuarios_path
         self.assigned_incidents = assigned_incidents
         self.assigned_requirements = assigned_requirements
         self.resolved_weight = resolved_weight
         self.resolved_days_window = resolved_days_window
+        self.turnos_path = turnos_path
         self.workload = {}
         self.resolved_workload = {}
         self.group_members_l1 = {}
@@ -33,10 +34,97 @@ class WorkloadBalancer:
         self.username_to_realname = {}
         self.name_tokens_to_username = {}
         self.active_usernames = set()
+        self.df_turnos = None
 
         self._load_grupos()
         self._load_usuarios()
+        self._load_turnos()
         self._load_initial_workload()
+
+    def _load_turnos(self):
+        if not self.turnos_path or not os.path.exists(self.turnos_path):
+            print(f"Warning: {self.turnos_path} not found. Shift assignments will default to 'TURNO'.")
+            return
+        try:
+            df = pd.read_csv(self.turnos_path, sep=';', encoding='latin-1', dtype=str)
+            if len(df.columns) == 1:
+                df = pd.read_csv(self.turnos_path, sep=',', encoding='latin-1', dtype=str)
+            df.columns = [str(c).strip() for c in df.columns]
+            if 'Fecha' in df.columns:
+                df['Fecha'] = df['Fecha'].str.strip()
+            self.df_turnos = df
+            print(f"Successfully loaded shifts configuration from {self.turnos_path}")
+        except Exception as e:
+            print(f"Warning: failed to load shifts configuration from {self.turnos_path}: {e}")
+
+    def get_shift_user(self, row):
+        if self.df_turnos is None:
+            return None
+        ts_col = next((c for c in ['sys_created_on', 'opened_at'] if c in row), None)
+        if not ts_col:
+            return None
+        sys_created_on = row.get(ts_col)
+        if pd.isna(sys_created_on):
+            return None
+        try:
+            dt = pd.to_datetime(str(sys_created_on).strip(), format='%d/%m/%Y %H:%M:%S', errors='coerce')
+            if pd.isna(dt):
+                dt = pd.to_datetime(str(sys_created_on).strip(), errors='coerce')
+            if pd.isna(dt):
+                return None
+            time_val = dt.time()
+            date_val = dt.date()
+            weekday = dt.weekday() # 0 = Monday, 5 = Saturday, 6 = Sunday
+            
+            t0600 = datetime.strptime("06:00:00", "%H:%M:%S").time()
+            t1400 = datetime.strptime("14:00:00", "%H:%M:%S").time()
+            t2200 = datetime.strptime("22:00:00", "%H:%M:%S").time()
+            
+            if weekday == 5: # Saturday
+                if time_val < t0600:
+                    shift_col = "Turno 3"
+                    shift_date = date_val - timedelta(days=1)
+                elif t0600 <= time_val < t1400:
+                    shift_col = "Turno 4"
+                    shift_date = date_val
+                else:
+                    shift_col = "Stand-by"
+                    shift_date = date_val
+            elif weekday == 6: # Sunday
+                shift_col = "Stand-by"
+                shift_date = date_val
+            elif weekday == 0 and time_val < t0600: # Monday early morning
+                shift_col = "Stand-by"
+                shift_date = date_val - timedelta(days=1)
+            else: # Monday after 06:00, and Tuesday to Friday
+                if t0600 <= time_val < t1400:
+                    shift_col = "Turno 1"
+                    shift_date = date_val
+                elif t1400 <= time_val < t2200:
+                    shift_col = "Turno 2"
+                    shift_date = date_val
+                else:
+                    shift_col = "Turno 3"
+                    if time_val < t0600:
+                        shift_date = date_val - timedelta(days=1)
+                    else:
+                        shift_date = date_val
+            
+            shift_date_str = shift_date.strftime('%d/%m/%Y')
+            if 'Fecha' not in self.df_turnos.columns or shift_col not in self.df_turnos.columns:
+                return None
+            match_rows = self.df_turnos[self.df_turnos['Fecha'] == shift_date_str]
+            if match_rows.empty:
+                shift_date_str_alt = shift_date.strftime('%Y-%m-%d')
+                match_rows = self.df_turnos[self.df_turnos['Fecha'] == shift_date_str_alt]
+            if not match_rows.empty:
+                val = match_rows.iloc[0][shift_col]
+                if pd.notna(val) and str(val).strip() != '':
+                    username = str(val).strip().upper()
+                    return self._canonical_assignee(username)
+        except Exception as e:
+            print(f"Error resolving shift user: {e}")
+        return None
 
     def _load_grupos(self):
         if not os.path.exists(self.grupos_path):
@@ -252,10 +340,36 @@ class WorkloadBalancer:
 
         new_assignees = []
 
-        for _, row in df.iterrows():
+        for idx, row in df.iterrows():
+            category_val = str(row.get("category", "")).strip()
+            subcategory_val = str(row.get("u_subcategory", "")).strip()
+            contact_type_val = str(row.get("contact_type", "")).strip()
+            
+            is_metadata_shift = (
+                category_val == "Operación TI" or
+                subcategory_val == "Batch" or
+                contact_type_val == "Monitoreo"
+            )
+            
             classification_val = row.get(available_cls_col, '')
+            
+            if is_metadata_shift:
+                shift_user = self.get_shift_user(row)
+                if shift_user:
+                    new_assignees.append(shift_user)
+                    self.workload[shift_user] = self.workload.get(shift_user, 0) + 1
+                else:
+                    new_assignees.append("TURNO")
+                df.at[idx, available_cls_col] = "turno"
+                continue
+                
             if(classification_val == 'trickle feed' or classification_val == 'reportes batch'):
-                new_assignees.append("TURNO")
+                shift_user = self.get_shift_user(row)
+                if shift_user:
+                    new_assignees.append(shift_user)
+                    self.workload[shift_user] = self.workload.get(shift_user, 0) + 1
+                else:
+                    new_assignees.append("TURNO")
                 continue
             if pd.isna(classification_val) or str(classification_val).strip() == '':
                 new_assignees.append("SIN_CLASIFICACION")
