@@ -40,7 +40,8 @@ LOAD_TIME = 5.0            # Time to wait for ticket page to load
 CLIPBOARD_TIME = 0.5       # Time to wait after copy/paste operations
 
 # Configuration and data directories
-CONFIG_FILE = "rpa_config.json"
+INCIDENT_CONFIG_FILE = "rpa_config_incidents.json"
+REQUIREMENT_CONFIG_FILE = "rpa_config_requirements.json"
 ENTRADA_DIR = "Entrada"
 SALIDA_DIR = "Salida"
 
@@ -52,51 +53,117 @@ def run_setup():
     print("\n" + "="*50)
     print("      SERVICENOW RPA SETUP & COORDINATES CALIBRATION")
     print("="*50)
-    print("This mode captures the direct screen coordinates of fields on your monitor.")
-    print("Please open your browser, maximize it, navigate to a ServiceNow ticket page,")
-    print("and make sure it is fully visible on your primary monitor.")
+    print("Choose which configuration to calibrate:")
+    print("1. Incidents (2 coordinates: Assigned to, Save/Update)")
+    print("2. Requirements (5 coordinates: Assigned to, Status, Due date, Application, Save/Update)")
+    print("3. Both")
     
-    print("\n--- STEP 1: Calibrate 'Assigned to' Input Box ---")
-    print("Action: Move your mouse cursor directly over the center of the 'Assigned to' (or 'Asignado a') INPUT text box.")
-    input("Once the cursor is positioned, return here and press Enter to save coordinates...")
-    assigned_to_x, assigned_to_y = pyautogui.position()
-    print(f"Captured 'Assigned to' Coordinates: X={assigned_to_x}, Y={assigned_to_y}")
+    choice = input("Select an option (1-3): ").strip()
     
-    print("\n--- STEP 2: Calibrate 'Update' or 'Save' Button ---")
-    print("Action: Move your mouse cursor directly over the center of the 'Update' (or 'Actualizar' / 'Save') button.")
-    input("Once the cursor is positioned, return here and press Enter to save coordinates...")
-    update_x, update_y = pyautogui.position()
-    print(f"Captured 'Update' Coordinates: X={update_x}, Y={update_y}")
-    
-    config = {
-        "assigned_to_x": assigned_to_x,
-        "assigned_to_y": assigned_to_y,
-        "update_x": update_x,
-        "update_y": update_y
-    }
-    
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=4)
+    if choice in ('1', '3'):
+        print("\n" + "="*40)
+        print("          CALIBRATING INCIDENT COORDINATES")
+        print("="*40)
+        print("Please open your browser, maximize it, navigate to a ServiceNow INCIDENT page,")
+        print("and make sure it is fully visible on your primary monitor.")
+        
+        print("\n--- STEP 1: Calibrate 'Assigned to' Input Box ---")
+        print("Action: Move your mouse cursor directly over the center of the 'Assigned to' (or 'Asignado a') INPUT text box.")
+        input("Once the cursor is positioned, return here and press Enter to save coordinates...")
+        assigned_to_x, assigned_to_y = pyautogui.position()
+        print(f"Captured 'Assigned to' Coordinates: X={assigned_to_x}, Y={assigned_to_y}")
+        
+        print("\n--- STEP 2: Calibrate 'Update' or 'Save' Button ---")
+        print("Action: Move your mouse cursor directly over the center of the 'Update' (or 'Actualizar' / 'Save') button.")
+        input("Once the cursor is positioned, return here and press Enter to save coordinates...")
+        update_x, update_y = pyautogui.position()
+        print(f"Captured 'Update' Coordinates: X={update_x}, Y={update_y}")
+        
+        config = {
+            "assigned_to_x": assigned_to_x,
+            "assigned_to_y": assigned_to_y,
+            "update_x": update_x,
+            "update_y": update_y
+        }
+        
+        with open(INCIDENT_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4)
+        print(f"Incident configuration saved successfully to: {INCIDENT_CONFIG_FILE}")
+        
+    if choice in ('2', '3'):
+        print("\n" + "="*40)
+        print("          CALIBRATING REQUIREMENT COORDINATES")
+        print("="*40)
+        print("Please open your browser, maximize it, navigate to a ServiceNow REQUIREMENT page.")
+        print("Note: If 'Due date' is not visible, temporarily change status to 'En proceso' first.")
+        print("Make sure it is fully visible on your primary monitor.")
+        
+        print("\n--- STEP 1: Calibrate 'Assigned to' Input Box ---")
+        print("Action: Move your mouse cursor directly over the center of the 'Assigned to' (or 'Asignado a') INPUT text box.")
+        input("Once the cursor is positioned, return here and press Enter...")
+        assigned_to_x, assigned_to_y = pyautogui.position()
+        
+        print("\n--- STEP 2: Calibrate 'Status' Combobox ---")
+        print("Action: Move your mouse cursor directly over the center of the 'Status' (or 'Estado') COMBOBOX.")
+        input("Once the cursor is positioned, return here and press Enter...")
+        status_x, status_y = pyautogui.position()
+        
+        print("\n--- STEP 3: Calibrate 'Due date' Input Box ---")
+        print("Action: Move your mouse cursor directly over the center of the 'Due date' (or 'Fecha de vencimiento/compromiso') INPUT text box.")
+        input("Once the cursor is positioned, return here and press Enter...")
+        due_date_x, due_date_y = pyautogui.position()
+        
+        print("\n--- STEP 4: Calibrate 'Application' Input Box ---")
+        print("Action: Move your mouse cursor directly over the center of the 'Application' (or 'Aplicación') INPUT text box.")
+        input("Once the cursor is positioned, return here and press Enter...")
+        application_x, application_y = pyautogui.position()
+        
+        print("\n--- STEP 5: Calibrate 'Update' or 'Save' Button ---")
+        print("Action: Move your mouse cursor directly over the center of the 'Update' (or 'Actualizar' / 'Save') button.")
+        input("Once the cursor is positioned, return here and press Enter...")
+        update_x, update_y = pyautogui.position()
+        
+        config = {
+            "assignation_textbox_x": assigned_to_x,
+            "assignation_textbox_y": assigned_to_y,
+            "status_combobox_x": status_x,
+            "status_combobox_y": status_y,
+            "due_date_textbox_x": due_date_x,
+            "due_date_textbox_y": due_date_y,
+            "application_textbox_x": application_x,
+            "application_textbox_y": application_y,
+            "save_button_x": update_x,
+            "save_button_y": update_y
+        }
+        
+        with open(REQUIREMENT_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4)
+        print(f"Requirement configuration saved successfully to: {REQUIREMENT_CONFIG_FILE}")
         
     print("\n" + "="*50)
-    print(f"Setup completed successfully! Config saved to: {CONFIG_FILE}")
+    print("Setup calibration phase completed.")
     print("You can now run the script in standard or dry-run mode.")
     print("="*50 + "\n")
 
 # ==========================================
 # CONFIG RESOLUTION
 # ==========================================
-def load_config():
+def load_config(config_file):
     """Loads calibration coordinates from the JSON configuration file."""
-    if not os.path.exists(CONFIG_FILE):
-        print(f"\n[ERROR] Configuration file '{CONFIG_FILE}' not found.")
+    # Legacy fallback for incidents
+    if config_file == INCIDENT_CONFIG_FILE and not os.path.exists(config_file) and os.path.exists("rpa_config.json"):
+        print("Using legacy configuration file: rpa_config.json")
+        config_file = "rpa_config.json"
+        
+    if not os.path.exists(config_file):
+        print(f"\n[ERROR] Configuration file '{config_file}' not found.")
         print("Please run Setup Mode (Option 4) first to calibrate your screen coordinates.")
         return None
     try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        with open(config_file, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"Error loading calibration config: {e}")
+        print(f"Error loading calibration config '{config_file}': {e}")
         return None
 
 # ==========================================
@@ -228,11 +295,23 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
         
     table_name = "sc_req_item" if is_requirement else "incident"
     
-    assigned_to_x = coordinates["assigned_to_x"]
-    assigned_to_y = coordinates["assigned_to_y"]
-    update_x = coordinates["update_x"]
-    update_y = coordinates["update_y"]
-    
+    if is_requirement:
+        assigned_to_x = coordinates["assignation_textbox_x"]
+        assigned_to_y = coordinates["assignation_textbox_y"]
+        status_x = coordinates["status_combobox_x"]
+        status_y = coordinates["status_combobox_y"]
+        due_date_x = coordinates["due_date_textbox_x"]
+        due_date_y = coordinates["due_date_textbox_y"]
+        application_x = coordinates["application_textbox_x"]
+        application_y = coordinates["application_textbox_y"]
+        update_x = coordinates["save_button_x"]
+        update_y = coordinates["save_button_y"]
+    else:
+        assigned_to_x = coordinates["assigned_to_x"]
+        assigned_to_y = coordinates["assigned_to_y"]
+        update_x = coordinates["update_x"]
+        update_y = coordinates["update_y"]
+        
     for idx, row in tickets_to_process.iterrows():
         ticket_id = row[num_col]
         assignee = row[assign_col]
@@ -250,7 +329,6 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
         time.sleep(LOAD_TIME)
             
         # 1. Click and focus "Assigned to" input box
-        # Click at the exact calibrated coordinates
         pyautogui.click(assigned_to_x, assigned_to_y)
         time.sleep(0.5)
         
@@ -265,14 +343,82 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
         pyautogui.press('enter')
         time.sleep(1.0)  # Wait for autocomplete dropdown to settle
         pyautogui.press('tab')
+        time.sleep(0.5)
         
-        # 2. Click Update/Save button (if not in dry run)
+        if is_requirement:
+            # 2. Click Status combobox and change to "En proceso"
+            print("Changing status from 'Nuevo' to 'En proceso'...")
+            pyautogui.click(status_x, status_y)
+            time.sleep(0.5)
+            pyperclip.copy("En proceso")
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            # Wait for due date textbox to appear after status is changed
+            print("Waiting for due date textbox to appear...")
+            time.sleep(2.0)
+            
+            # 3. Fill Due Date textbox
+            due_date = row.get('fecha_resolucion')
+            due_date_str = ""
+            if pd.notna(due_date) and str(due_date).strip():
+                try:
+                    for fmt in ('%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d'):
+                        try:
+                            dt = datetime.strptime(str(due_date).strip(), fmt)
+                            due_date_str = dt.strftime('%d/%m/%Y %H:%M:%S')
+                            break
+                        except ValueError:
+                            continue
+                    if not due_date_str:
+                        due_date_str = str(due_date).strip()
+                except Exception:
+                    due_date_str = str(due_date).strip()
+            else:
+                # Fallback to current date plus 30 days
+                due_date_dt = datetime.now() + timedelta(days=30)
+                due_date_str = due_date_dt.strftime('%d/%m/%Y %H:%M:%S')
+            
+            print(f"Setting due date: {due_date_str}...")
+            pyautogui.click(due_date_x, due_date_y)
+            time.sleep(0.5)
+            pyautogui.hotkey('ctrl', 'a')
+            pyautogui.press('backspace')
+            time.sleep(CLIPBOARD_TIME)
+            pyperclip.copy(due_date_str)
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            time.sleep(0.5)
+            pyautogui.press('tab')
+            time.sleep(0.5)
+            
+            # 4. Fill Application textbox (always "Bancs")
+            application_str = "Bancs"
+            print(f"Setting application: {application_str}...")
+            pyautogui.click(application_x, application_y)
+            time.sleep(0.5)
+            pyautogui.hotkey('ctrl', 'a')
+            pyautogui.press('backspace')
+            time.sleep(CLIPBOARD_TIME)
+            pyperclip.copy(application_str)
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            time.sleep(0.5)
+            pyautogui.press('tab')
+            time.sleep(0.5)
+            
+        # Click Update/Save button (if not in dry run)
         if not DRY_RUN:
             pyautogui.click(update_x, update_y)
-            print(f"Clicked 'Update' button at ({update_x}, {update_y})")
+            print(f"Clicked 'Update/Save' button at ({update_x}, {update_y})")
             time.sleep(LOAD_TIME)
         else:
-            print(f"[DRY RUN] Bypassing click on 'Update' button at ({update_x}, {update_y}). Changes not saved.")
+            print(f"[DRY RUN] Bypassing click on 'Update/Save' button at ({update_x}, {update_y}). Changes not saved.")
             time.sleep(1.0)
             
     print("\nServiceNow UI update loop finished!")
@@ -280,25 +426,30 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
 def run_rpa_loop():
     """Orchestrates the UI update loop for both incidents and requirements."""
     # Load coordinates first
-    coords = load_config()
-    if not coords:
-        return
-        
+    coords_incidents = load_config(INCIDENT_CONFIG_FILE)
+    coords_requirements = load_config(REQUIREMENT_CONFIG_FILE)
+    
     print("\n" + "="*50)
     print("              3. SERVICENOW UI UPDATING PHASE")
     print("="*50)
     
     latest_incident_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
     if latest_incident_csv:
-        print(f"Latest Incident prediction file found: {latest_incident_csv}")
-        update_tickets_in_servicenow(latest_incident_csv, coords, is_requirement=False)
+        if coords_incidents:
+            print(f"Latest Incident prediction file found: {latest_incident_csv}")
+            update_tickets_in_servicenow(latest_incident_csv, coords_incidents, is_requirement=False)
+        else:
+            print("Skipping Incident updating: Incident config coordinates not loaded.")
     else:
         print("No incident predictions output file found in Salida/ to process.")
         
     latest_req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
     if latest_req_csv:
-        print(f"Latest Requirement prediction file found: {latest_req_csv}")
-        update_tickets_in_servicenow(latest_req_csv, coords, is_requirement=True)
+        if coords_requirements:
+            print(f"Latest Requirement prediction file found: {latest_req_csv}")
+            update_tickets_in_servicenow(latest_req_csv, coords_requirements, is_requirement=True)
+        else:
+            print("Skipping Requirement updating: Requirement config coordinates not loaded.")
     else:
         print("No requirement predictions output file found in Salida/ to process.")
 

@@ -78,32 +78,72 @@ Este script actualizará de manera automática los modelos y archivos serializad
 Para los flujos semisupervisados, puedes ejecutar los notebooks interactivos en `Entrenamiento/Semisupervisado/`. Estos guardarán sus reportes de análisis en un subdirectorio local llamado `Resultados/` e implementarán los modelos resultantes directamente en la carpeta de producción `semisupervised_model/`.
 
 ### Ejecutar Asignación
-Desde la raíz del proyecto:
+Desde la raíz del proyecto, puedes ejecutar los modelos de asignación locales:
 ```bash
-python Assigner_Incidents.py
-python Assigner_Requirements.py
+py Assigner_Incidents.py
+py Assigner_Requirements.py
 ```
+
+### Ejecutar RPA ServiceNow E2E Orchestrator
+El orquestador RPA interactúa automáticamente con la interfaz web de ServiceNow usando control de mouse y teclado (PyAutoGUI) para descargar los tickets, procesarlos con los modelos de ML locales y subir las asignaciones.
+
+Ejecución del orquestador:
+```bash
+py RPA_ServiceNow_E2E.py
+```
+
+El script ofrece las siguientes opciones:
+1. **Run E2E RPA Pipeline**: Descarga los CSVs desde ServiceNow, ejecuta predicciones de ML y actualiza los tickets en la web.
+2. **Run Models & Update**: Ejecuta predicciones de ML en los CSVs existentes en `Entrada/` y los sube a ServiceNow.
+3. **Run Updates Only**: Sube a ServiceNow directamente usando los CSVs clasificados más recientes en `Salida/`.
+4. **Setup Mode**: Calibra y guarda las coordenadas de pantalla para los campos de entrada y botones en ServiceNow.
+5. **Daemon Mode**: Ejecuta el pipeline completo de forma cíclica según un intervalo de tiempo especificado.
+
+*Nota: Se recomienda probar primero con el modo **DRY RUN** (opcional al arrancar) para validar visualmente los clics del robot sin guardar los cambios reales.*
 
 ## Configuration
 
 #### Shift Validation Rules
-El sistema aplica las siguientes reglas de validación:
-- **Operación TI**: Incidentes en categoría "Operación TI"
-- **Batch**: Incidentes con subcategoría "Batch"  
-- **Monitoreo**: Incidentes con tipo de contacto "Monitoreo"
+El sistema aplica reglas automáticas para derivar incidentes específicos al personal de turno. Cualquier incidente que cumpla con alguna de las siguientes condiciones es clasificado como ticket de turno:
+- **Operación TI**: Categoría "Operación TI"
+- **Batch**: Subcategoría "Batch" o clasificado/predicho como "reportes batch" o "trickle feed"
+- **Monitoreo**: Medio de contacto (contact_type) es "Monitoreo"
 
-Cualquier incidente que cumpla con ALGUNA de estas condiciones será asignado a "TURNO".
+#### Shift Configuration (Turnos.csv)
+Cuando un ticket es clasificado como de turno, el balanceador de carga (`Programas/LoadBalancer.py`) consulta el archivo `Entrada/Turnos.csv` para asignar automáticamente el ticket al usuario en turno específico, dependiendo de la fecha y hora de creación del ticket (`sys_created_on` o `opened_at`):
+
+- **Lunes a Viernes:**
+  - `06:00:00` a `13:59:59` -> **Turno 1**
+  - `14:00:00` a `21:59:59` -> **Turno 2**
+  - `22:00:00` a `05:59:59` (del día siguiente) -> **Turno 3**
+- **Sábado:**
+  - `00:00:00` a `05:59:59` -> **Turno 3** (perteneciente al viernes de guardia)
+  - `06:00:00` a `13:59:59` -> **Turno 4**
+  - `14:00:00` a `23:59:59` -> **Stand-by**
+- **Domingo:**
+  - Todo el día (`00:00:00` a `23:59:59`) -> **Stand-by**
+- **Lunes temprano:**
+  - `00:00:00` a `05:59:59` -> **Stand-by** (perteneciente al domingo de guardia)
+
+Si el archivo `Entrada/Turnos.csv` no se encuentra o no contiene una coincidencia para el día y turno correspondiente, el ticket se asigna genéricamente a `"TURNO"`.
 
 ## Data Format
 
 ### Archivos de Entrada
-- `Entrada/incidents.csv` - Datos de incidentes
-- `Entrada/requirements.csv` - Datos de requerimientos
+- `Entrada/incident.csv` - Listado de incidentes activos descargados de ServiceNow
+- `Entrada/sc_req_item.csv` - Listado de requerimientos activos descargados de ServiceNow
+- `Entrada/Turnos.csv` - Cuadrante de turnos diario con columnas: `Fecha`, `Turno 1`, `Turno 2`, `Turno 3`, `Turno 4` y `Stand-by`
+- `Entrada/Grupos - Incidentes(Grupos).csv` y `Entrada/Grupos - Requerimientos(Grupos).csv` - Configuración de miembros por cada macrogrupo
+- `Entrada/Grupos - Usuarios.csv` - Listado general de usuarios de TI, sus usernames canónicos y estado de disponibilidad (`Estado = 1` para activo)
+
+### Archivos de Configuración RPA
+- `rpa_config_incidents.json` - Coordenadas de pantalla calibradas para actualizar Incidentes (2 campos)
+- `rpa_config_requirements.json` - Coordenadas de pantalla calibradas para actualizar Requerimientos (5 campos)
 
 ### Archivos de Salida
-- `Salida/incidentes_con_asignacion_{timestamp}.csv`
-- `Salida/requerimientos_con_asignacion_{timestamp}.csv`
-- `Salida/resumen_asignaciones_{timestamp}.txt`
+- `Salida/incidentes_con_asignacion_{timestamp}.csv` - Incidentes con asignaciones y grupos mapeados
+- `Salida/requerimientos_con_asignacion_{timestamp}.csv` - Requerimientos con asignaciones, estado actualizado e información de fecha de resolución (`fecha_resolucion`)
+- `Salida/resumen_asignaciones_{timestamp}.txt` - Estadísticas y distribución final de carga
 
 ## Model Training
 
