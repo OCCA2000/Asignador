@@ -217,7 +217,7 @@ def run_downloads():
     print("="*50)
     
     # 1. Incidents
-    incident_url = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=active=true^assigned_toISEMPTY&CSV"
+    incident_url = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
     print(f"Opening Incident list page: {incident_url}")
     webbrowser.open(incident_url)
     print("A browser window was opened.")
@@ -229,7 +229,7 @@ def run_downloads():
         print("Warning: Could not automatically find/move incident CSV file. Please make sure Entrada/incident.csv exists.")
         
     # 2. Requirements
-    req_url = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=active=true^assigned_toISEMPTY&CSV"
+    req_url = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
     print(f"\nOpening Requirements list page: {req_url}")
     webbrowser.open(req_url)
     print("A browser window was opened.")
