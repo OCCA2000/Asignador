@@ -63,3 +63,6 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# json
+rpa_config.json
