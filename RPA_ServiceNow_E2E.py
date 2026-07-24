@@ -15,6 +15,7 @@ import json
 import shutil
 import subprocess
 import webbrowser
+from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
@@ -302,6 +303,89 @@ def run_rpa_loop():
         print("No requirement predictions output file found in Salida/ to process.")
 
 # ==========================================
+# DAEMON MODE
+# ==========================================
+def run_daemon_mode():
+    """Runs the RPA automation loop continuously at set intervals."""
+    print("\n" + "="*50)
+    print("              5. DAEMON AUTOMATION MODE")
+    print("="*50)
+    
+    print("Select base run mode:")
+    print("1. [Full E2E Pipeline] Run downloads, models, and update ServiceNow.")
+    print("2. [Models & Update] Skip downloads, run models on local Entrada/, and update.")
+    print("3. [Updates Only] Skip models, just update ServiceNow using latest Salida/ CSVs.")
+    
+    mode_choice = input("Select mode (1-3) [default 2]: ").strip()
+    if not mode_choice:
+        mode_choice = '2'
+        
+    dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [Y/n]: ").strip().lower()
+    daemon_dry_run = dry_choice != 'n'
+    
+    interval_str = input("Enter sleep interval in minutes [default 60]: ").strip()
+    try:
+        interval_mins = float(interval_str) if interval_str else 60.0
+    except ValueError:
+        print("Invalid number. Defaulting to 60.0 minutes.")
+        interval_mins = 60.0
+        
+    interval_secs = int(interval_mins * 60)
+    
+    print("\n" + "="*50)
+    print(f"Daemon mode activated! Interval: {interval_mins} mins ({interval_secs}s)")
+    print(f"Base Mode: {mode_choice} | Dry Run: {daemon_dry_run}")
+    print("Press Ctrl+C in this terminal to stop the daemon.")
+    print("="*50 + "\n")
+    
+    global SKIP_DOWNLOAD, DRY_RUN
+    DRY_RUN = daemon_dry_run
+    
+    while True:
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"\n[{current_time}] Starting automation cycle...")
+        
+        try:
+            if mode_choice == '1':
+                SKIP_DOWNLOAD = False
+                run_downloads()
+                run_predictions()
+                run_rpa_loop()
+            elif mode_choice == '2':
+                SKIP_DOWNLOAD = True
+                run_predictions()
+                run_rpa_loop()
+            elif mode_choice == '3':
+                SKIP_DOWNLOAD = True
+                run_rpa_loop()
+            else:
+                print("Invalid mode chosen. Defaulting to Option 2 flow.")
+                SKIP_DOWNLOAD = True
+                run_predictions()
+                run_rpa_loop()
+                
+            print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
+        except KeyboardInterrupt:
+            print("\nDaemon stopped by user (Ctrl+C). Exiting loop.")
+            break
+        except Exception as e:
+            print(f"\n[ERROR] Exception occurred in daemon cycle: {e}")
+            print("Retrying in the next cycle...")
+            
+        next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
+        print(f"Sleeping for {interval_mins} minutes. Next run at {next_run_time}...")
+        
+        # Sleep in 5-second increments to stay responsive to Ctrl+C interrupts
+        sleep_left = interval_secs
+        try:
+            while sleep_left > 0:
+                time.sleep(min(5, sleep_left))
+                sleep_left -= 5
+        except KeyboardInterrupt:
+            print("\nDaemon stopped by user (Ctrl+C). Exiting.")
+            break
+
+# ==========================================
 # MAIN INTERFACE
 # ==========================================
 def main():
@@ -312,9 +396,10 @@ def main():
     print("2. [Run Models & Update] Skip downloads, run models on local Entrada/, and update.")
     print("3. [Run Updates Only] Skip models, just update ServiceNow using latest Salida/ CSVs.")
     print("4. [Setup Mode] Calibrate monitor coordinates for input box and update button.")
-    print("5. Exit")
+    print("5. [Daemon Mode] Run automation continuously at a set interval (daemon loop).")
+    print("6. Exit")
     
-    choice = input("\nSelect an option (1-5): ").strip()
+    choice = input("\nSelect an option (1-6): ").strip()
     
     global SKIP_DOWNLOAD, DRY_RUN
     
@@ -345,6 +430,9 @@ def main():
         run_setup()
         
     elif choice == '5':
+        run_daemon_mode()
+        
+    elif choice == '6':
         print("Exiting. Have a great day!")
         return
         
