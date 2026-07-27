@@ -1,4 +1,6 @@
+import glob
 import os
+import shutil
 from datetime import datetime
 
 
@@ -81,20 +83,54 @@ def replace_commas_outside_quotes(text: str, to_separator: str = ';') -> str:
     return ''.join(result)
 
 
-def obtener_ruta_salida_fecha(prefix: str, base_dir: str = "Entrada", timing: str = None) -> tuple:
+def archivar_archivos_anteriores(base_dir: str, pattern: str):
     """
-    Genera la ruta de salida organizada por carpetas con la fecha actual (YYYY-MM-DD)
-    dentro del directorio base (por defecto 'Entrada').
-    Devuelve la tupla (ruta_salida, timing).
+    Mueve los archivos que coincidan con 'pattern' que estén en la raíz de 'base_dir'
+    hacia su respectiva subcarpeta por fecha 'base_dir/YYYY-MM-DD/'.
+    """
+    if not os.path.exists(base_dir):
+        return
+    search_path = os.path.join(base_dir, pattern)
+    archivos = [f for f in glob.glob(search_path) if os.path.isfile(f)]
+    for filepath in archivos:
+        filename = os.path.basename(filepath)
+        mtime = os.path.getmtime(filepath)
+        fecha_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+        target_dir = os.path.join(base_dir, fecha_str)
+        os.makedirs(target_dir, exist_ok=True)
+        dest_path = os.path.join(target_dir, filename)
+        if os.path.exists(dest_path):
+            base, ext = os.path.splitext(filename)
+            counter = 1
+            while os.path.exists(os.path.join(target_dir, f"{base}_{counter}{ext}")):
+                counter += 1
+            dest_path = os.path.join(target_dir, f"{base}_{counter}{ext}")
+        try:
+            shutil.move(filepath, dest_path)
+            print(f"Archivado ejecucion previa: {filename} -> {fecha_str}/")
+        except Exception as e:
+            print(f"No se pudo archivar {filepath}: {e}")
+
+
+def obtener_ruta_salida_fecha(prefix: str, base_dir: str = "Entrada", timing: str = None, ext: str = ".csv", archivar_previos: bool = True) -> tuple:
+    """
+    Archiva primero cualquier archivo anterior que coincida con prefix en la raíz de base_dir
+    hacia su respectiva carpeta base_dir/YYYY-MM-DD/.
+    Luego devuelve la nueva ruta directamente en la raíz de base_dir y el timing.
     """
     now = datetime.now()
-    fecha_folder = now.strftime('%Y-%m-%d')
     if timing is None:
         timing = now.strftime('%Y-%m-%d_%H-%M-%S')
 
-    dir_salida = os.path.join(base_dir, fecha_folder)
-    os.makedirs(dir_salida, exist_ok=True)
-    ruta_salida = os.path.join(dir_salida, f"{prefix}_{timing}.csv")
+    if not ext.startswith("."):
+        ext = "." + ext
+
+    os.makedirs(base_dir, exist_ok=True)
+
+    if archivar_previos:
+        archivar_archivos_anteriores(base_dir, f"{prefix}_*{ext}")
+
+    ruta_salida = os.path.join(base_dir, f"{prefix}_{timing}{ext}")
     return ruta_salida, timing
 
 

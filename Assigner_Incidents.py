@@ -175,20 +175,16 @@ def apply_shift_validation(df_incidentes):
     return df_incidentes
 
 def generate_assignment_reports(df_incidentes, timing, balancer=None):
-    """Generate output files with assignment predictions"""
-    print("Generating assignment reports...")
-    
-    # Create output directory
-    os.makedirs("Salida", exist_ok=True)
+    """Generate assignment reports and CSV output"""
+    incident_output, _ = obtener_ruta_salida_fecha("incidentes_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
+    summary_path, _ = obtener_ruta_salida_fecha("resumen_asignaciones_incidentes", base_dir="Salida", timing=timing, ext=".txt")
     
     # Save incident predictions
     if "predicted_assigned_to" in df_incidentes.columns:
-        incident_output = f"Salida/incidentes_con_asignacion_{timing}.csv"
         df_incidentes.to_csv(incident_output, sep=';', index=False, encoding='latin-1')
         print(f"Incident assignments saved to: {incident_output}")
     
     # Generate summary report
-    summary_path = f"Salida/resumen_asignaciones_incidentes_{timing}.txt"
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.write(f"Incident Assignment Summary - {timing}\n")
         f.write("=" * 50 + "\n\n")

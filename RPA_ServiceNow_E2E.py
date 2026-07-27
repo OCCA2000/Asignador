@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
+from Programas.CleaningData import archivar_archivos_anteriores
 
 # ==========================================
 # CONFIGURATION
@@ -205,10 +206,14 @@ def move_latest_download(pattern, destination_name):
         print(f"Error copying file {latest_file}: {e}")
         return False
 
-def find_latest_output_file(pattern):
-    """Returns the path to the most recent output prediction CSV."""
+def find_latest_output_file(pattern, min_mtime=None):
+    """Returns the path to the most recent output prediction CSV in root Salida/."""
     search_path = os.path.join(SALIDA_DIR, pattern)
-    files = glob.glob(search_path)
+    files = [f for f in glob.glob(search_path) if os.path.isfile(f)]
+    
+    if min_mtime is not None:
+        files = [f for f in files if os.path.getmtime(f) >= min_mtime]
+
     if not files:
         return None
     files.sort(key=os.path.getmtime, reverse=True)
@@ -251,6 +256,10 @@ def run_predictions():
     print("\n" + "="*50)
     print("              2. PREDICTION MODELS PHASE")
     print("="*50)
+    
+    # Archivar ejecuciones anteriores en Salida/ hacia sus carpetas por fecha
+    archivar_archivos_anteriores(SALIDA_DIR, "*.csv")
+    archivar_archivos_anteriores(SALIDA_DIR, "*.txt")
     
     # Run Incident Assigner
     print("Running Assigner_Incidents.py...")
@@ -430,7 +439,7 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
             
     print("\nServiceNow UI update loop finished!")
 
-def run_rpa_loop():
+def run_rpa_loop(min_mtime=None):
     """Orchestrates the UI update loop for both incidents and requirements."""
     # Load coordinates first
     coords_incidents = load_config(INCIDENT_CONFIG_FILE)
@@ -440,7 +449,7 @@ def run_rpa_loop():
     print("              3. SERVICENOW UI UPDATING PHASE")
     print("="*50)
     
-    latest_incident_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
+    latest_incident_csv = find_latest_output_file("incidentes_con_asignacion_*.csv", min_mtime=min_mtime)
     if latest_incident_csv:
         if coords_incidents:
             print(f"Latest Incident prediction file found: {latest_incident_csv}")
@@ -448,9 +457,9 @@ def run_rpa_loop():
         else:
             print("Skipping Incident updating: Incident config coordinates not loaded.")
     else:
-        print("No incident predictions output file found in Salida/ to process.")
+        print("No incident predictions output file found for this cycle to process.")
         
-    latest_req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
+    latest_req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv", min_mtime=min_mtime)
     if latest_req_csv:
         if coords_requirements:
             print(f"Latest Requirement prediction file found: {latest_req_csv}")
@@ -458,7 +467,7 @@ def run_rpa_loop():
         else:
             print("Skipping Requirement updating: Requirement config coordinates not loaded.")
     else:
-        print("No requirement predictions output file found in Salida/ to process.")
+        print("No requirement predictions output file found for this cycle to process.")
 
 # ==========================================
 # DAEMON MODE
@@ -500,6 +509,7 @@ def run_daemon_mode():
     DRY_RUN = daemon_dry_run
     
     while True:
+        cycle_start = time.time()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"\n[{current_time}] Starting automation cycle...")
         
@@ -508,19 +518,19 @@ def run_daemon_mode():
                 SKIP_DOWNLOAD = False
                 run_downloads()
                 run_predictions()
-                run_rpa_loop()
+                run_rpa_loop(min_mtime=cycle_start)
             elif mode_choice == '2':
                 SKIP_DOWNLOAD = True
                 run_predictions()
-                run_rpa_loop()
+                run_rpa_loop(min_mtime=cycle_start)
             elif mode_choice == '3':
                 SKIP_DOWNLOAD = True
-                run_rpa_loop()
+                run_rpa_loop(min_mtime=None)
             else:
                 print("Invalid mode chosen. Defaulting to Option 2 flow.")
                 SKIP_DOWNLOAD = True
                 run_predictions()
-                run_rpa_loop()
+                run_rpa_loop(min_mtime=cycle_start)
                 
             print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
         except KeyboardInterrupt:
@@ -566,23 +576,25 @@ def main():
         dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
         DRY_RUN = dry_choice != 'n'
         
+        cycle_start = time.time()
         run_downloads()
         run_predictions()
-        run_rpa_loop()
+        run_rpa_loop(min_mtime=cycle_start)
         
     elif choice == '2':
         SKIP_DOWNLOAD = True
         dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
         DRY_RUN = dry_choice != 'n'
         
+        cycle_start = time.time()
         run_predictions()
-        run_rpa_loop()
+        run_rpa_loop(min_mtime=cycle_start)
         
     elif choice == '3':
         dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
         DRY_RUN = dry_choice != 'n'
         
-        run_rpa_loop()
+        run_rpa_loop(min_mtime=None)
         
     elif choice == '4':
         run_setup()

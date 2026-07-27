@@ -270,17 +270,15 @@ def generate_assignment_reports(df_requerimientos, timing, balancer=None):
     """Generate output CSV and summary txt with assignment results."""
     print("Generating assignment reports...")
 
-    os.makedirs("Salida", exist_ok=True)
+    output_path, _ = obtener_ruta_salida_fecha("requerimientos_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
+    summary_path, _ = obtener_ruta_salida_fecha("resumen_asignaciones_requerimientos", base_dir="Salida", timing=timing, ext=".txt")
 
     if "predicted_assigned_to" in df_requerimientos.columns:
-        output_path = f"Salida/requerimientos_con_asignacion_{timing}.csv"
-
         cols_salida = [c for c in df_requerimientos.columns if not c.endswith('_norm')
                        and c not in ('short_core', 'desc_core', 'texto_limpio')]
         df_requerimientos[cols_salida].to_csv(output_path, sep=';', index=False, encoding='latin-1')
         print(f"Requirement assignments saved to: {output_path}")
 
-    summary_path = f"Salida/resumen_asignaciones_requerimientos_{timing}.txt"
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.write(f"Requirement Assignment Summary - {timing}\n")
         f.write("=" * 50 + "\n\n")
