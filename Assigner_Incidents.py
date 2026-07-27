@@ -1,4 +1,5 @@
 from Programas.CleaningData import clean_csv_file, get_output_path_date
+from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime
 import glob
 import os
@@ -262,6 +263,12 @@ def main():
     except Exception as e:
         print(f"Error updating assigned file: {e}")
     
+    # Guardar predicciones en el último conjunto de datos categorizado para entrenamiento futuro
+    try:
+        save_predictions_to_categorized_dataset(df_incidents, ticket_type="incidentes")
+    except Exception as e:
+        print(f"Error saving to categorized dataset: {e}")
+
     print(f"Incident assignment process completed successfully at {timing}")
 
 if __name__ == "__main__":

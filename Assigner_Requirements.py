@@ -1,4 +1,5 @@
 from Programas.CleaningData import clean_csv_file, get_output_path_date
+from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import glob
@@ -363,6 +364,12 @@ def main():
         print("Successfully updated Especificaciones/assigned_requirements.csv")
     except Exception as e:
         print(f"Error updating assigned file: {e}")
+
+    # Guardar predicciones en el último conjunto de datos categorizado para entrenamiento futuro
+    try:
+        save_predictions_to_categorized_dataset(df_requirements, ticket_type="requerimientos")
+    except Exception as e:
+        print(f"Error saving to categorized dataset: {e}")
 
     print(f"Requirement assignment process completed successfully at {timing}")
 
