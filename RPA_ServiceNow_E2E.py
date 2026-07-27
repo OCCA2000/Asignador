@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
-from Programas.CleaningData import archivar_archivos_anteriores
+from Programas.CleaningData import archive_previous_files
 
 # ==========================================
 # CONFIGURATION
@@ -258,8 +258,8 @@ def run_predictions():
     print("="*50)
     
     # Archivar ejecuciones anteriores en Salida/ hacia sus carpetas por fecha
-    archivar_archivos_anteriores(SALIDA_DIR, "*.csv")
-    archivar_archivos_anteriores(SALIDA_DIR, "*.txt")
+    archive_previous_files(SALIDA_DIR, "*.csv")
+    archive_previous_files(SALIDA_DIR, "*.txt")
     
     # Run Incident Assigner
     print("Running Assigner_Incidents.py...")

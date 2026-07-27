@@ -83,7 +83,7 @@ def replace_commas_outside_quotes(text: str, to_separator: str = ';') -> str:
     return ''.join(result)
 
 
-def archivar_archivos_anteriores(base_dir: str, pattern: str):
+def archive_previous_files(base_dir: str, pattern: str):
     """
     Mueve los archivos que coincidan con 'pattern' que estén en la raíz de 'base_dir'
     hacia su respectiva subcarpeta por fecha 'base_dir/YYYY-MM-DD/'.
@@ -112,7 +112,7 @@ def archivar_archivos_anteriores(base_dir: str, pattern: str):
             print(f"No se pudo archivar {filepath}: {e}")
 
 
-def obtener_ruta_salida_fecha(prefix: str, base_dir: str = "Entrada", timing: str = None, ext: str = ".csv", archivar_previos: bool = True) -> tuple:
+def get_output_path_date(prefix: str, base_dir: str = "Entrada", timing: str = None, ext: str = ".csv", archivar_previos: bool = True) -> tuple:
     """
     Archiva primero cualquier archivo anterior que coincida con prefix en la raíz de base_dir
     hacia su respectiva carpeta base_dir/YYYY-MM-DD/.
@@ -128,15 +128,15 @@ def obtener_ruta_salida_fecha(prefix: str, base_dir: str = "Entrada", timing: st
     os.makedirs(base_dir, exist_ok=True)
 
     if archivar_previos:
-        archivar_archivos_anteriores(base_dir, f"{prefix}_*{ext}")
+        archive_previous_files(base_dir, f"{prefix}_*{ext}")
 
     ruta_salida = os.path.join(base_dir, f"{prefix}_{timing}{ext}")
     return ruta_salida, timing
 
 
-def limpiar_archivo_csv(ruta_entrada: str, ruta_salida: str, encoding: str = "utf-8",
-                        replacement: str = " ", cambiar_separador: bool = True,
-                        nuevo_separador: str = ';'):
+def clean_csv_file(ruta_entrada: str, ruta_salida: str, encoding: str = "utf-8",
+                   replacement: str = " ", cambiar_separador: bool = True,
+                   nuevo_separador: str = ';'):
     """
     Lee un archivo completo (CSV o texto), limpia saltos de línea dentro de comillas dobles
     y opcionalmente cambia el separador de coma a 'nuevo_separador' fuera de comillas.
@@ -160,8 +160,8 @@ def limpiar_archivo_csv(ruta_entrada: str, ruta_salida: str, encoding: str = "ut
         f.write(limpio)
 
 
-def limpiar_texto_csv(texto: str, replacement: str = " ", cambiar_separador: bool = True,
-                      nuevo_separador: str = ';') -> str:
+def clean_csv_text(texto: str, replacement: str = " ", cambiar_separador: bool = True,
+                   nuevo_separador: str = ';') -> str:
     """Atajo para procesar un string en memoria."""
     limpio = fix_newlines_inside_quotes(texto, replacement=replacement)
     if cambiar_separador:

@@ -1,4 +1,4 @@
-from Programas.CleaningData import limpiar_archivo_csv, obtener_ruta_salida_fecha
+from Programas.CleaningData import clean_csv_file, get_output_path_date
 from datetime import datetime
 import glob
 import os
@@ -78,7 +78,7 @@ def predict_incident_assignments(df_incidentes, balancer, model_type='supervised
             nltk.download('stopwords', quiet=True)
             spanish_stopwords = set(nltk_stopwords.words('spanish'))
 
-            def limpiar_texto(texto):
+            def clean_text(texto):
                 if pd.isnull(texto):
                     return ""
                 texto = str(texto).lower()
@@ -98,7 +98,7 @@ def predict_incident_assignments(df_incidentes, balancer, model_type='supervised
                 df_incidentes['u_subcategory'].fillna('') + ' ' +
                 df_incidentes['u_subcategory_2'].fillna('')
             )
-            df_incidentes['texto_unificado'] = df_incidentes['texto_unificado'].apply(limpiar_texto)
+            df_incidentes['texto_unificado'] = df_incidentes['texto_unificado'].apply(clean_text)
             
             X = vectorizer.transform(df_incidentes['texto_unificado'])
             df_incidentes['Clasificación'] = modelo.predict(X)
@@ -176,8 +176,8 @@ def apply_shift_validation(df_incidentes):
 
 def generate_assignment_reports(df_incidentes, timing, balancer=None):
     """Generate assignment reports and CSV output"""
-    incident_output, _ = obtener_ruta_salida_fecha("incidentes_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
-    summary_path, _ = obtener_ruta_salida_fecha("resumen_asignaciones_incidentes", base_dir="Salida", timing=timing, ext=".txt")
+    incident_output, _ = get_output_path_date("incidentes_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
+    summary_path, _ = get_output_path_date("resumen_asignaciones_incidentes", base_dir="Salida", timing=timing, ext=".txt")
     
     # Save incident predictions
     if "predicted_assigned_to" in df_incidentes.columns:
@@ -212,10 +212,10 @@ def load_and_clean_data():
     """Load and clean incident data files"""
     print("Loading and cleaning incident data files...")
     
-    ruta_salida, timing = obtener_ruta_salida_fecha("incidentes", base_dir="Entrada")
+    ruta_salida, timing = get_output_path_date("incidentes", base_dir="Entrada")
     
     # Clean data files
-    limpiar_archivo_csv(
+    clean_csv_file(
         ruta_entrada="Entrada/incident.csv",
         ruta_salida=ruta_salida,
         encoding="latin-1",

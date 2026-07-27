@@ -1,4 +1,4 @@
-from Programas.CleaningData import limpiar_archivo_csv, obtener_ruta_salida_fecha
+from Programas.CleaningData import clean_csv_file, get_output_path_date
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import glob
@@ -129,7 +129,7 @@ def _strip_boilerplate(texto):
     return re.sub(r'\s+', ' ', t).strip()
 
 
-def _construir_texto_final(row, min_tokens=4):
+def _build_final_text(row, min_tokens=4):
     d = row['desc_core']  if pd.notna(row.get('desc_core'))  else ''
     s = row['short_core'] if pd.notna(row.get('short_core')) else ''
     d_ok = len(str(d).strip().split()) >= min_tokens
@@ -145,7 +145,7 @@ def _construir_texto_final(row, min_tokens=4):
 
 # ── Fecha de resolución ──────────────────────────────────────────────────────────
 
-def calcular_fecha_resolucion(opened_at_str):
+def calculate_resolution_date(opened_at_str):
     try:
         fecha_asignacion = pd.to_datetime(opened_at_str, format='%d/%m/%Y %H:%M:%S')
     except Exception:
@@ -203,7 +203,7 @@ def predict_requirement_assignments(df_requerimientos, balancer):
         df_requerimientos['short_core'] = df_requerimientos['short_norm'].apply(_strip_boilerplate)
         df_requerimientos['desc_core']  = df_requerimientos['desc_norm'].apply(_strip_boilerplate)
 
-        df_requerimientos['texto_limpio'] = df_requerimientos.apply(_construir_texto_final, axis=1)
+        df_requerimientos['texto_limpio'] = df_requerimientos.apply(_build_final_text, axis=1)
 
         sin_texto = (df_requerimientos['texto_limpio'] == '').sum()
         print(f"Tickets with valid text: {len(df_requerimientos) - sin_texto} / {len(df_requerimientos)}")
@@ -239,7 +239,7 @@ def predict_requirement_assignments(df_requerimientos, balancer):
         if 'opened_at' in df_requerimientos.columns:
             random.seed(42)
             df_requerimientos['fecha_resolucion'] = df_requerimientos['opened_at'].apply(
-                calcular_fecha_resolucion
+                calculate_resolution_date
             )
             print("[Fecha de resolución calculada a partir de opened_at]")
 
@@ -270,8 +270,8 @@ def generate_assignment_reports(df_requerimientos, timing, balancer=None):
     """Generate output CSV and summary txt with assignment results."""
     print("Generating assignment reports...")
 
-    output_path, _ = obtener_ruta_salida_fecha("requerimientos_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
-    summary_path, _ = obtener_ruta_salida_fecha("resumen_asignaciones_requerimientos", base_dir="Salida", timing=timing, ext=".txt")
+    output_path, _ = get_output_path_date("requerimientos_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
+    summary_path, _ = get_output_path_date("resumen_asignaciones_requerimientos", base_dir="Salida", timing=timing, ext=".txt")
 
     if "predicted_assigned_to" in df_requerimientos.columns:
         cols_salida = [c for c in df_requerimientos.columns if not c.endswith('_norm')
@@ -309,9 +309,9 @@ def load_and_clean_data():
     """Load and clean requirement data files."""
     print("Loading and cleaning requirement data files...")
 
-    ruta_salida, timing = obtener_ruta_salida_fecha("requerimientos", base_dir="Entrada")
+    ruta_salida, timing = get_output_path_date("requerimientos", base_dir="Entrada")
 
-    limpiar_archivo_csv(
+    clean_csv_file(
         ruta_entrada="Entrada/sc_req_item.csv",
         ruta_salida=ruta_salida,
         encoding="latin-1",

@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 from datetime import datetime, timedelta
-from Programas.CleaningData import limpiar_archivo_csv
+from Programas.CleaningData import clean_csv_file
 import random
 
 def _normalize_text(text):
@@ -259,7 +259,7 @@ class WorkloadBalancer:
             if os.path.exists(file_path):
                 temp_cleaned = file_path + ".temp.csv"
                 try:
-                    limpiar_archivo_csv(
+                    clean_csv_file(
                         ruta_entrada=file_path,
                         ruta_salida=temp_cleaned,
                         encoding="latin-1",

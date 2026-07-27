@@ -62,8 +62,8 @@ def generate_report():
                 })
                     
     # 3. Format Output
-    from Programas.CleaningData import obtener_ruta_salida_fecha
-    report_path, timing = obtener_ruta_salida_fecha("reporte_carga_por_grupos", base_dir="Salida", ext=".txt")
+    from Programas.CleaningData import get_output_path_date
+    report_path, timing = get_output_path_date("reporte_carga_por_grupos", base_dir="Salida", ext=".txt")
     
     report_lines = []
     report_lines.append(f"Comprehensive Group Workload Report - {timing}")
