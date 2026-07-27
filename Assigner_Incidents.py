@@ -6,19 +6,19 @@ import pandas as pd
 import joblib
 from Programas.LoadBalancer import WorkloadBalancer
 
-def predict_incident_assignments(df_incidentes, balancer, model_type='supervised'):
-    """Predict assignments for incidents using trained models"""
+def predict_incident_assignments(df_incidents, balancer, model_type='supervised'):
+    """Predice asignaciones de incidentes utilizando modelos entrenados"""
     print(f"Predicting incident assignments using {model_type} model...")
     
     model_path = f"Incidentes/{model_type}_model"
     
     if model_type == 'supervised':
         try:
-            # Load supervised model
+            # Cargar modelo supervisado
             pipeline = joblib.load(f"{model_path}/assigned_to_tfidf_svm.joblib")
             label_encoder = joblib.load(f"{model_path}/label_encoder.joblib")
             
-            # Prepare text features (same as in training)
+            # Preparar características de texto (igual que en entrenamiento)
             import re, unicodedata
             
             def normalize_text(s):
@@ -41,30 +41,30 @@ def predict_incident_assignments(df_incidentes, balancer, model_type='supervised
                 ]
                 return normalize_text(" ".join([p for p in parts if isinstance(p, str)]))
             
-            df_incidentes["text"] = df_incidentes.apply(build_text, axis=1)
+            df_incidents["text"] = df_incidents.apply(build_text, axis=1)
             
-            # Make predictions
-            X = df_incidentes["text"].values
+            # Realizar predicciones
+            X = df_incidents["text"].values
             predictions = pipeline.predict(X)
             predicted_assignees = label_encoder.inverse_transform(predictions)
             
-            # Add predictions to dataframe
-            df_incidentes["predicted_assigned_to"] = predicted_assignees
+            # Agregar predicciones al dataframe
+            df_incidents["predicted_assigned_to"] = predicted_assignees
             
-            # Apply shift validation rule
-            df_incidentes = apply_shift_validation(df_incidentes)
+            # Aplicar regla de validación de turnos
+            df_incidents = apply_shift_validation(df_incidents)
             
-            # Add group prediction and load balance
-            df_incidentes = balancer.balance_assignment(df_incidentes)
+            # Agregar predicción de grupo y balancear carga
+            df_incidents = balancer.balance_assignment(df_incidents)
             
-            df_incidentes['predicted_assigned_to'] = df_incidentes['assigned_to']
-            df_incidentes['predicted_assignment_group'] = df_incidentes['Clasificación']
+            df_incidents['predicted_assigned_to'] = df_incidents['assigned_to']
+            df_incidents['predicted_assignment_group'] = df_incidents['Clasificación']
             
-            return df_incidentes
+            return df_incidents
             
         except Exception as e:
             print(f"Error in supervised prediction: {e}")
-            return df_incidentes
+            return df_incidents
     
     elif model_type == 'semisupervised':
         try:
@@ -72,96 +72,96 @@ def predict_incident_assignments(df_incidentes, balancer, model_type='supervised
             import nltk
             from nltk.corpus import stopwords as nltk_stopwords
 
-            modelo = joblib.load(f"{model_path}/modelo_Logistic_Regression.joblib")
+            model = joblib.load(f"{model_path}/modelo_Logistic_Regression.joblib")
             vectorizer = joblib.load(f"{model_path}/vectorizer_tfidf.joblib")
 
             nltk.download('stopwords', quiet=True)
             spanish_stopwords = set(nltk_stopwords.words('spanish'))
 
-            def clean_text(texto):
-                if pd.isnull(texto):
+            def clean_text(text):
+                if pd.isnull(text):
                     return ""
-                texto = str(texto).lower()
-                texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('utf-8')
-                texto = re.sub(r'[^a-zA-Z0-9\s]', ' ', texto)
-                texto = re.sub(r'\b\d+\b', ' ', texto)
-                texto = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', texto)
-                texto = re.sub(r'\b\w{1,2}\b', ' ', texto)
-                texto = re.sub(r'\s+', ' ', texto).strip()
-                tokens = [t for t in texto.split() if t not in spanish_stopwords]
+                text = str(text).lower()
+                text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
+                text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
+                text = re.sub(r'\b\d+\b', ' ', text)
+                text = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', text)
+                text = re.sub(r'\b\w{1,2}\b', ' ', text)
+                text = re.sub(r'\s+', ' ', text).strip()
+                tokens = [t for t in text.split() if t not in spanish_stopwords]
                 return ' '.join(tokens)
 
-            # Build texto_unificado with same columns used in training
-            df_incidentes['texto_unificado'] = (
-                df_incidentes['short_description'].fillna('') + ' ' +
-                df_incidentes['description'].fillna('') + ' ' +
-                df_incidentes['u_subcategory'].fillna('') + ' ' +
-                df_incidentes['u_subcategory_2'].fillna('')
+            # Construir texto_unificado con las mismas columnas usadas en entrenamiento
+            df_incidents['texto_unificado'] = (
+                df_incidents['short_description'].fillna('') + ' ' +
+                df_incidents['description'].fillna('') + ' ' +
+                df_incidents['u_subcategory'].fillna('') + ' ' +
+                df_incidents['u_subcategory_2'].fillna('')
             )
-            df_incidentes['texto_unificado'] = df_incidentes['texto_unificado'].apply(clean_text)
+            df_incidents['texto_unificado'] = df_incidents['texto_unificado'].apply(clean_text)
             
-            X = vectorizer.transform(df_incidentes['texto_unificado'])
-            df_incidentes['Clasificación'] = modelo.predict(X)
+            X = vectorizer.transform(df_incidents['texto_unificado'])
+            df_incidents['Clasificación'] = model.predict(X)
 
             print(f"\n{'='*55}")
             print(f"  MODELO: Logistic Regression (semi-supervisado)")
-            print(f"  Tickets procesados : {len(df_incidentes)}")
+            print(f"  Tickets procesados : {len(df_incidents)}")
             print(f"  Features TF-IDF    : {X.shape[1]}")
             print(f"{'='*55}")
             print("\n[Clasificación predicha por el modelo]\n")
-            id_col = next((c for c in ['number', 'Number', 'id'] if c in df_incidentes.columns), None)
-            for _, row in df_incidentes.iterrows():
+            id_col = next((c for c in ['number', 'Number', 'id'] if c in df_incidents.columns), None)
+            for _, row in df_incidents.iterrows():
                 ticket_id = row[id_col] if id_col else "—"
                 desc = str(row.get('short_description', ''))[:60]
-                clase = row['Clasificación']
-                texto = str(row.get('texto_unificado', ''))[:50]
-                print(f"  {ticket_id}  |  {clase:<30}  |  {desc}")
-                print(f"  {'':^10}     texto: {texto}")
+                predicted_class = row['Clasificación']
+                text = str(row.get('texto_unificado', ''))[:50]
+                print(f"  {ticket_id}  |  {predicted_class:<30}  |  {desc}")
+                print(f"  {'':^10}     texto: {text}")
             print(f"\n[Distribución de clases predichas]")
-            for clase, count in df_incidentes['Clasificación'].value_counts().items():
-                print(f"  {clase:<35} {count} ticket(s)")
+            for predicted_class, count in df_incidents['Clasificación'].value_counts().items():
+                print(f"  {predicted_class:<35} {count} ticket(s)")
 
-            df_incidentes = apply_shift_validation(df_incidentes)
-            df_incidentes = balancer.balance_assignment(df_incidentes)
+            df_incidents = apply_shift_validation(df_incidents)
+            df_incidents = balancer.balance_assignment(df_incidents)
 
-            if 'assigned_to' in df_incidentes.columns:
+            if 'assigned_to' in df_incidents.columns:
                 print(f"\n[Asignación final tras balanceo]")
                 cols = [c for c in [id_col, 'Clasificación', 'assigned_to'] if c]
-                print(df_incidentes[cols].to_string(index=False))
+                print(df_incidents[cols].to_string(index=False))
 
             # Alinear nombres de columnas con los que espera generate_assignment_reports/main()
-            df_incidentes['predicted_assigned_to'] = df_incidentes['assigned_to']
-            df_incidentes['predicted_assignment_group'] = df_incidentes['Clasificación']
+            df_incidents['predicted_assigned_to'] = df_incidents['assigned_to']
+            df_incidents['predicted_assignment_group'] = df_incidents['Clasificación']
 
-            return df_incidentes
+            return df_incidents
 
         except Exception as e:
             print(f"Error in test_semisupervisado prediction: {e}")
-            return df_incidentes
+            return df_incidents
 
-    return df_incidentes
+    return df_incidents
 
-def apply_shift_validation(df_incidentes):
-    """Apply shift validation rule for Operación TI + Batch and Monitoreo scenarios"""
+def apply_shift_validation(df_incidents):
+    """Aplica reglas de validación de turnos para escenarios de Operación TI + Batch y Monitoreo"""
     print("Applying shift validation rule...")
     
-    # Create masks for different shift scenarios
+    # Crear máscaras para diferentes escenarios de turno
     batch_category_mask = (
-        df_incidentes.get("category", "").astype(str).str.strip() == "Operación TI"
+        df_incidents.get("category", "").astype(str).str.strip() == "Operación TI"
     )
     
     batch_subcategory_mask = (
-        df_incidentes.get("u_subcategory", "").astype(str).str.strip() == "Batch"
+        df_incidents.get("u_subcategory", "").astype(str).str.strip() == "Batch"
     )
     
     monitoreo_mask = (
-        df_incidentes.get("contact_type", "").astype(str).str.strip() == "Monitoreo"
+        df_incidents.get("contact_type", "").astype(str).str.strip() == "Monitoreo"
     )
     
-    # Combine all masks with OR conditions (any of the criteria triggers TURNO assignment)
+    # Combinar todas las máscaras con condiciones OR (cualquier criterio activa asignación por TURNO)
     shift_mask = batch_category_mask | batch_subcategory_mask | monitoreo_mask
     
-    # Count how many incidents match each rule
+    # Contar cuántos incidentes coinciden con cada regla
     batch_category_count = batch_category_mask.sum()
     batch_subcategory_count = batch_subcategory_mask.sum()
     monitoreo_count = monitoreo_mask.sum()
@@ -172,28 +172,28 @@ def apply_shift_validation(df_incidentes):
     print(f"Found {monitoreo_count} incidents matching Monitoreo contact type")
     print(f"Total {total_shift_count} incidents matching metadata shift rules")
     
-    return df_incidentes
+    return df_incidents
 
-def generate_assignment_reports(df_incidentes, timing, balancer=None):
-    """Generate assignment reports and CSV output"""
+def generate_assignment_reports(df_incidents, timing, balancer=None):
+    """Genera reportes de asignación y salida CSV"""
     incident_output, _ = get_output_path_date("incidentes_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
     summary_path, _ = get_output_path_date("resumen_asignaciones_incidentes", base_dir="Salida", timing=timing, ext=".txt")
     
-    # Save incident predictions
-    if "predicted_assigned_to" in df_incidentes.columns:
-        df_incidentes.to_csv(incident_output, sep=';', index=False, encoding='latin-1')
+    # Guardar predicciones de incidentes
+    if "predicted_assigned_to" in df_incidents.columns:
+        df_incidents.to_csv(incident_output, sep=';', index=False, encoding='latin-1')
         print(f"Incident assignments saved to: {incident_output}")
     
-    # Generate summary report
+    # Generar reporte de resumen
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.write(f"Incident Assignment Summary - {timing}\n")
         f.write("=" * 50 + "\n\n")
         
-        if "predicted_assigned_to" in df_incidentes.columns:
-            f.write(f"Incidents processed: {len(df_incidentes)}\n")
-            f.write(f"Unique assignees predicted: {df_incidentes['predicted_assigned_to'].nunique()}\n")
+        if "predicted_assigned_to" in df_incidents.columns:
+            f.write(f"Incidents processed: {len(df_incidents)}\n")
+            f.write(f"Unique assignees predicted: {df_incidents['predicted_assigned_to'].nunique()}\n")
             f.write("\nTop 5 predicted assignees:\n")
-            f.write(df_incidentes['predicted_assigned_to'].value_counts().head().to_string())
+            f.write(df_incidents['predicted_assigned_to'].value_counts().head().to_string())
             f.write("\n\n")
             
         if balancer and hasattr(balancer, 'workload') and balancer.workload:
@@ -209,54 +209,54 @@ def generate_assignment_reports(df_incidentes, timing, balancer=None):
     print(f"Summary report saved to: {summary_path}")
 
 def load_and_clean_data():
-    """Load and clean incident data files"""
+    """Carga y limpia archivos de datos de incidentes"""
     print("Loading and cleaning incident data files...")
     
-    ruta_salida, timing = get_output_path_date("incidentes", base_dir="Entrada")
+    output_path, timing = get_output_path_date("incidentes", base_dir="Entrada")
     
-    # Clean data files
+    # Limpiar archivos de datos
     clean_csv_file(
-        ruta_entrada="Entrada/incident.csv",
-        ruta_salida=ruta_salida,
+        input_path="Entrada/incident.csv",
+        output_path=output_path,
         encoding="latin-1",
         replacement=" ",
-        cambiar_separador=True,
-        nuevo_separador=';'
+        change_separator=True,
+        new_separator=';'
     )
     
-    # Load cleaned data
-    df_incidentes = pd.read_csv(ruta_salida, sep=';', dtype=str, engine='python',
+    # Cargar datos limpios
+    df_incidents = pd.read_csv(output_path, sep=';', dtype=str, engine='python',
                      on_bad_lines='skip', encoding='latin-1')
     
-    print(f"Loaded {len(df_incidentes)} incidents")
+    print(f"Loaded {len(df_incidents)} incidents")
     
-    original_columns = list(df_incidentes.columns)
+    original_columns = list(df_incidents.columns)
     
-    return df_incidentes, timing, original_columns
+    return df_incidents, timing, original_columns
 
 def main():
-    """Main assignment workflow for incidents"""
-    # Load and clean data
+    """Flujo principal de asignación para incidentes"""
+    # Cargar y limpiar datos
     try:
-        df_incidentes, timing, original_columns = load_and_clean_data()
+        df_incidents, timing, original_columns = load_and_clean_data()
     except Exception as e:
         print(f"Error loading data: {e}. Please ensure Entrada/incident.csv exists.")
         return
         
     balancer = WorkloadBalancer()
     
-    # Make predictions (using existing trained models)
+    # Realizar predicciones (usando modelos entrenados)
     print("Making assignment predictions for incidents...")
-    df_incidentes = predict_incident_assignments(df_incidentes, balancer, model_type='semisupervised')
+    df_incidents = predict_incident_assignments(df_incidents, balancer, model_type='semisupervised')
     
-    # Generate reports
-    generate_assignment_reports(df_incidentes, timing, balancer)
+    # Generar reportes
+    generate_assignment_reports(df_incidents, timing, balancer)
     
-    # Update original assigned file
+    # Actualizar archivo original de asignaciones
     try:
-        df_incidentes["assigned_to"] = df_incidentes["predicted_assigned_to"]
-        df_incidentes["assignment_group"] = df_incidentes["predicted_assignment_group"]
-        df_to_append = df_incidentes[original_columns]
+        df_incidents["assigned_to"] = df_incidents["predicted_assigned_to"]
+        df_incidents["assignment_group"] = df_incidents["predicted_assignment_group"]
+        df_to_append = df_incidents[original_columns]
         df_to_append.to_csv("Especificaciones/assigned_incidents.csv", mode='a', index=False, header=False, sep=',', encoding='utf-8')
         print("Successfully updated Especificaciones/assigned_incidents.csv")
     except Exception as e:

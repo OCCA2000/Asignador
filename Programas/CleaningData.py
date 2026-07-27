@@ -85,18 +85,17 @@ def replace_commas_outside_quotes(text: str, to_separator: str = ';') -> str:
 
 def archive_previous_files(base_dir: str, pattern: str):
     """
-    Mueve los archivos que coincidan con 'pattern' que estén en la raíz de 'base_dir'
-    hacia su respectiva subcarpeta por fecha 'base_dir/YYYY-MM-DD/'.
+    Mueve los archivos que coincidan con 'pattern' en la raíz de 'base_dir' hacia subcarpetas de fecha 'base_dir/YYYY-MM-DD/'.
     """
     if not os.path.exists(base_dir):
         return
     search_path = os.path.join(base_dir, pattern)
-    archivos = [f for f in glob.glob(search_path) if os.path.isfile(f)]
-    for filepath in archivos:
+    target_files = [f for f in glob.glob(search_path) if os.path.isfile(f)]
+    for filepath in target_files:
         filename = os.path.basename(filepath)
         mtime = os.path.getmtime(filepath)
-        fecha_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
-        target_dir = os.path.join(base_dir, fecha_str)
+        date_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+        target_dir = os.path.join(base_dir, date_str)
         os.makedirs(target_dir, exist_ok=True)
         dest_path = os.path.join(target_dir, filename)
         if os.path.exists(dest_path):
@@ -107,16 +106,15 @@ def archive_previous_files(base_dir: str, pattern: str):
             dest_path = os.path.join(target_dir, f"{base}_{counter}{ext}")
         try:
             shutil.move(filepath, dest_path)
-            print(f"Archivado ejecucion previa: {filename} -> {fecha_str}/")
+            print(f"Archived previous execution: {filename} -> {date_str}/")
         except Exception as e:
-            print(f"No se pudo archivar {filepath}: {e}")
+            print(f"Could not archive {filepath}: {e}")
 
 
-def get_output_path_date(prefix: str, base_dir: str = "Entrada", timing: str = None, ext: str = ".csv", archivar_previos: bool = True) -> tuple:
+def get_output_path_date(prefix: str, base_dir: str = "Entrada", timing: str = None, ext: str = ".csv", archive_previous: bool = True) -> tuple:
     """
-    Archiva primero cualquier archivo anterior que coincida con prefix en la raíz de base_dir
-    hacia su respectiva carpeta base_dir/YYYY-MM-DD/.
-    Luego devuelve la nueva ruta directamente en la raíz de base_dir y el timing.
+    Archiva archivos previos coincidentes en la raíz de base_dir hacia base_dir/YYYY-MM-DD/,
+    luego devuelve la nueva ruta directamente en la raíz de base_dir y la cadena de tiempo.
     """
     now = datetime.now()
     if timing is None:
@@ -127,44 +125,44 @@ def get_output_path_date(prefix: str, base_dir: str = "Entrada", timing: str = N
 
     os.makedirs(base_dir, exist_ok=True)
 
-    if archivar_previos:
+    if archive_previous:
         archive_previous_files(base_dir, f"{prefix}_*{ext}")
 
-    ruta_salida = os.path.join(base_dir, f"{prefix}_{timing}{ext}")
-    return ruta_salida, timing
+    output_path = os.path.join(base_dir, f"{prefix}_{timing}{ext}")
+    return output_path, timing
 
 
-def clean_csv_file(ruta_entrada: str, ruta_salida: str, encoding: str = "utf-8",
-                   replacement: str = " ", cambiar_separador: bool = True,
-                   nuevo_separador: str = ';'):
+def clean_csv_file(input_path: str, output_path: str, encoding: str = "utf-8",
+                   replacement: str = " ", change_separator: bool = True,
+                   new_separator: str = ';'):
     """
-    Lee un archivo completo (CSV o texto), limpia saltos de línea dentro de comillas dobles
-    y opcionalmente cambia el separador de coma a 'nuevo_separador' fuera de comillas.
-    Escribe el resultado en ruta_salida.
+    Lee un archivo completo (CSV o texto), corrige saltos de línea dentro de comillas dobles
+    y opcionalmente cambia los separadores de coma a 'new_separator' fuera de comillas.
+    Escribe el resultado en output_path.
     """
-    dir_salida = os.path.dirname(ruta_salida)
-    if dir_salida:
-        os.makedirs(dir_salida, exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
-    with open(ruta_entrada, 'r', encoding=encoding, newline='') as f:
-        contenido = f.read()
+    with open(input_path, 'r', encoding=encoding, newline='') as f:
+        content = f.read()
 
-    # 1) Arreglar saltos de línea dentro de comillas
-    limpio = fix_newlines_inside_quotes(contenido, replacement=replacement)
+    # 1) Corregir saltos de línea dentro de comillas
+    cleaned = fix_newlines_inside_quotes(content, replacement=replacement)
 
-    # 2) Cambiar separador solo fuera de comillas
-    if cambiar_separador:
-        limpio = replace_commas_outside_quotes(limpio, to_separator=nuevo_separador)
+    # 2) Cambiar separador fuera de comillas
+    if change_separator:
+        cleaned = replace_commas_outside_quotes(cleaned, to_separator=new_separator)
 
-    with open(ruta_salida, 'w', encoding=encoding, newline='') as f:
-        f.write(limpio)
+    with open(output_path, 'w', encoding=encoding, newline='') as f:
+        f.write(cleaned)
 
 
-def clean_csv_text(texto: str, replacement: str = " ", cambiar_separador: bool = True,
-                   nuevo_separador: str = ';') -> str:
-    """Atajo para procesar un string en memoria."""
-    limpio = fix_newlines_inside_quotes(texto, replacement=replacement)
-    if cambiar_separador:
-        limpio = replace_commas_outside_quotes(limpio, to_separator=nuevo_separador)
-    return limpio
+def clean_csv_text(text: str, replacement: str = " ", change_separator: bool = True,
+                   new_separator: str = ';') -> str:
+    """Procesa una cadena de texto en memoria."""
+    cleaned = fix_newlines_inside_quotes(text, replacement=replacement)
+    if change_separator:
+        cleaned = replace_commas_outside_quotes(cleaned, to_separator=new_separator)
+    return cleaned
 

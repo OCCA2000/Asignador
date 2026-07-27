@@ -147,147 +147,147 @@ def _build_final_text(row, min_tokens=4):
 
 def calculate_resolution_date(opened_at_str):
     try:
-        fecha_asignacion = pd.to_datetime(opened_at_str, format='%d/%m/%Y %H:%M:%S')
+        assignment_date = pd.to_datetime(opened_at_str, format='%d/%m/%Y %H:%M:%S')
     except Exception:
         return None
 
-    fecha_base      = fecha_asignacion + relativedelta(months=1)
-    dias_resta      = random.randint(0, 5)
-    fecha_calculada = fecha_base - timedelta(days=dias_resta)
+    base_date        = assignment_date + relativedelta(months=1)
+    days_subtract    = random.randint(0, 5)
+    calculated_date  = base_date - timedelta(days=days_subtract)
 
-    if fecha_calculada.weekday() < 5:
-        fecha_final = fecha_calculada.date()
+    if calculated_date.weekday() < 5:
+        final_date = calculated_date.date()
     else:
-        dias_a_viernes   = fecha_calculada.weekday() - 4
-        dias_a_lunes     = 7 - fecha_calculada.weekday()
-        viernes_anterior = fecha_calculada - timedelta(days=dias_a_viernes)
-        lunes_siguiente  = fecha_calculada + timedelta(days=dias_a_lunes)
-        fecha_min        = fecha_base - timedelta(days=5)
+        days_to_friday   = calculated_date.weekday() - 4
+        days_to_monday   = 7 - calculated_date.weekday()
+        previous_friday  = calculated_date - timedelta(days=days_to_friday)
+        next_monday      = calculated_date + timedelta(days=days_to_monday)
+        min_date         = base_date - timedelta(days=5)
 
-        if lunes_siguiente > fecha_base:
-            fecha_final = viernes_anterior.date()
-        elif viernes_anterior < fecha_min:
-            fecha_final = lunes_siguiente.date()
+        if next_monday > base_date:
+            final_date = previous_friday.date()
+        elif previous_friday < min_date:
+            final_date = next_monday.date()
         else:
-            fecha_final = viernes_anterior.date()
+            final_date = previous_friday.date()
 
-    return fecha_asignacion.replace(
-        year=fecha_final.year, month=fecha_final.month, day=fecha_final.day
-    )
+    return assignment_date.replace(
+        year=final_date.year, month=final_date.month, day=final_date.day
+    ).strftime('%Y-%m-%d %H:%M:%S')
 
 
-# ── Predicción ───────────────────────────────────────────────────────────────────
+# ── Predicción y asignación ──────────────────────────────────────────────────────
 
-def predict_requirement_assignments(df_requerimientos, balancer):
-    """Classify requirements and assign them using the trained supervisado model."""
+def predict_requirement_assignments(df_requirements, balancer):
+    """Clasifica requerimientos y los asigna utilizando el modelo supervisado entrenado."""
     print("Predicting requirement assignments using supervisado model...")
 
     try:
-        # Load model and vectorizer
-        ruta_modelo     = "Requerimientos/supervised_model/modelo_Requerimientos.joblib"
-        ruta_vectorizer = "Requerimientos/supervised_model/vectorizer_Requerimientos.joblib"
+        # Cargar modelo y vectorizer
+        model_path      = "Requerimientos/supervised_model/modelo_Requerimientos.joblib"
+        vectorizer_path = "Requerimientos/supervised_model/vectorizer_Requerimientos.joblib"
 
-        if not os.path.exists(ruta_modelo) or not os.path.exists(ruta_vectorizer):
+        if not os.path.exists(model_path) or not os.path.exists(vectorizer_path):
             print("Error: no se encontraron los archivos del modelo en Modelos/. Ejecuta Supervisado_Requerimientos.ipynb primero.")
-            return df_requerimientos
+            return df_requirements
 
-        modelo     = joblib.load(ruta_modelo)
-        vectorizer = joblib.load(ruta_vectorizer)
-        print(f"Model:      {ruta_modelo}")
-        print(f"Vectorizer: {ruta_vectorizer}")
+        model      = joblib.load(model_path)
+        vectorizer = joblib.load(vectorizer_path)
+        print(f"Model:      {model_path}")
+        print(f"Vectorizer: {vectorizer_path}")
 
         print("Normalizing text...")
-        df_requerimientos['short_norm'] = df_requerimientos['short_description'].apply(_normalize_text_req)
-        df_requerimientos['desc_norm'] = df_requerimientos['description'].apply(_normalize_text_req)
+        df_requirements['short_norm'] = df_requirements['short_description'].apply(_normalize_text_req)
+        df_requirements['desc_norm'] = df_requirements['description'].apply(_normalize_text_req)
 
-        df_requerimientos['short_core'] = df_requerimientos['short_norm'].apply(_strip_boilerplate)
-        df_requerimientos['desc_core']  = df_requerimientos['desc_norm'].apply(_strip_boilerplate)
+        df_requirements['short_core'] = df_requirements['short_norm'].apply(_strip_boilerplate)
+        df_requirements['desc_core']  = df_requirements['desc_norm'].apply(_strip_boilerplate)
 
-        df_requerimientos['texto_limpio'] = df_requerimientos.apply(_build_final_text, axis=1)
+        df_requirements['texto_limpio'] = df_requirements.apply(_build_final_text, axis=1)
 
-        sin_texto = (df_requerimientos['texto_limpio'] == '').sum()
-        print(f"Tickets with valid text: {len(df_requerimientos) - sin_texto} / {len(df_requerimientos)}")
+        empty_text_count = (df_requirements['texto_limpio'] == '').sum()
+        print(f"Tickets with valid text: {len(df_requirements) - empty_text_count} / {len(df_requirements)}")
 
-        # Predict
-        X = vectorizer.transform(df_requerimientos['texto_limpio'])
-        df_requerimientos['Clasificación'] = modelo.predict(X)
+        # Predicción
+        X = vectorizer.transform(df_requirements['texto_limpio'])
+        df_requirements['Clasificación'] = model.predict(X)
 
-        # Tickets without text → 'revision'
-        mask_sin_texto = df_requerimientos['texto_limpio'] == ''
-        df_requerimientos.loc[mask_sin_texto, 'Clasificación'] = 'revision'
+        # Tickets sin texto -> 'revision'
+        empty_text_mask = df_requirements['texto_limpio'] == ''
+        df_requirements.loc[empty_text_mask, 'Clasificación'] = 'revision'
 
         print(f"\n{'='*55}")
         print(f"  MODELO: Supervisado")
-        print(f"  Tickets procesados : {len(df_requerimientos)}")
+        print(f"  Tickets procesados : {len(df_requirements)}")
         print(f"  Features TF-IDF    : {X.shape[1]}")
         print(f"{'='*55}")
 
         print("\n[Clasificación predicha por el modelo]\n")
-        id_col = next((c for c in ['number', 'Number', 'id'] if c in df_requerimientos.columns), None)
-        for _, row in df_requerimientos.iterrows():
-            ticket_id = row[id_col] if id_col else "—"
-            desc      = str(row.get('short_description', ''))[:60]
-            clase     = row['Clasificación']
-            print(f"  {ticket_id}  |  {clase:<40}  |  {desc}")
+        id_col = next((c for c in ['number', 'Number', 'id'] if c in df_requirements.columns), None)
+        for _, row in df_requirements.iterrows():
+            ticket_id       = row[id_col] if id_col else "—"
+            desc            = str(row.get('short_description', ''))[:60]
+            predicted_class = row['Clasificación']
+            print(f"  {ticket_id}  |  {predicted_class:<40}  |  {desc}")
 
         print(f"\n[Distribución de clases predichas]")
-        for clase, count in df_requerimientos['Clasificación'].value_counts().items():
-            print(f"  {clase:<42} {count} ticket(s)")
+        for predicted_class, count in df_requirements['Clasificación'].value_counts().items():
+            print(f"  {predicted_class:<42} {count} ticket(s)")
         print()
 
         # Fecha de resolución (solo si opened_at está presente)
-        if 'opened_at' in df_requerimientos.columns:
+        if 'opened_at' in df_requirements.columns:
             random.seed(42)
-            df_requerimientos['fecha_resolucion'] = df_requerimientos['opened_at'].apply(
+            df_requirements['fecha_resolucion'] = df_requirements['opened_at'].apply(
                 calculate_resolution_date
             )
             print("[Fecha de resolución calculada a partir de opened_at]")
 
-        # Workload balancing
-        df_requerimientos = balancer.balance_assignment(df_requerimientos)
+        # Balanceo de carga
+        df_requirements = balancer.balance_assignment(df_requirements)
 
-        if 'assigned_to' in df_requerimientos.columns:
+        if 'assigned_to' in df_requirements.columns:
             print(f"\n[Asignación final tras balanceo]")
             cols = [c for c in [id_col, 'Clasificación', 'assigned_to'] if c]
-            print(df_requerimientos[cols].to_string(index=False))
+            print(df_requirements[cols].to_string(index=False))
 
-        # Align column names for generate_assignment_reports / main()
-        df_requerimientos['predicted_assigned_to']    = df_requerimientos['assigned_to']
-        df_requerimientos['predicted_assignment_group'] = df_requerimientos['Clasificación']
+        # Alinear nombres de columnas para generate_assignment_reports / main()
+        df_requirements['predicted_assigned_to']    = df_requirements['assigned_to']
+        df_requirements['predicted_assignment_group'] = df_requirements['Clasificación']
 
-        return df_requerimientos
+        return df_requirements
 
     except Exception as e:
         print(f"Error in prediction: {e}")
         import traceback
         traceback.print_exc()
-        return df_requerimientos
+        return df_requirements
 
 
 # ── Reportes ─────────────────────────────────────────────────────────────────────
 
-def generate_assignment_reports(df_requerimientos, timing, balancer=None):
-    """Generate output CSV and summary txt with assignment results."""
+def generate_assignment_reports(df_requirements, timing, balancer=None):
+    """Genera CSV de salida y reporte resumen txt con los resultados de asignación."""
     print("Generating assignment reports...")
 
     output_path, _ = get_output_path_date("requerimientos_con_asignacion", base_dir="Salida", timing=timing, ext=".csv")
     summary_path, _ = get_output_path_date("resumen_asignaciones_requerimientos", base_dir="Salida", timing=timing, ext=".txt")
 
-    if "predicted_assigned_to" in df_requerimientos.columns:
-        cols_salida = [c for c in df_requerimientos.columns if not c.endswith('_norm')
+    if "predicted_assigned_to" in df_requirements.columns:
+        output_cols = [c for c in df_requirements.columns if not c.endswith('_norm')
                        and c not in ('short_core', 'desc_core', 'texto_limpio')]
-        df_requerimientos[cols_salida].to_csv(output_path, sep=';', index=False, encoding='latin-1')
+        df_requirements[output_cols].to_csv(output_path, sep=';', index=False, encoding='latin-1')
         print(f"Requirement assignments saved to: {output_path}")
 
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.write(f"Requirement Assignment Summary - {timing}\n")
         f.write("=" * 50 + "\n\n")
 
-        if "predicted_assigned_to" in df_requerimientos.columns:
-            f.write(f"Requirements processed: {len(df_requerimientos)}\n")
-            f.write(f"Unique assignees predicted: {df_requerimientos['predicted_assigned_to'].nunique()}\n")
+        if "predicted_assigned_to" in df_requirements.columns:
+            f.write(f"Requirements processed: {len(df_requirements)}\n")
+            f.write(f"Unique assignees predicted: {df_requirements['predicted_assigned_to'].nunique()}\n")
             f.write("\nTop 5 predicted assignees:\n")
-            f.write(df_requerimientos['predicted_assigned_to'].value_counts().head().to_string())
+            f.write(df_requirements['predicted_assigned_to'].value_counts().head().to_string())
             f.write("\n\n")
 
         if balancer and hasattr(balancer, 'workload') and balancer.workload:
@@ -306,60 +306,56 @@ def generate_assignment_reports(df_requerimientos, timing, balancer=None):
 # ── Carga de datos ────────────────────────────────────────────────────────────────
 
 def load_and_clean_data():
-    """Load and clean requirement data files."""
+    """Carga y limpia archivos de datos de requerimientos."""
     print("Loading and cleaning requirement data files...")
 
-    ruta_salida, timing = get_output_path_date("requerimientos", base_dir="Entrada")
+    output_path, timing = get_output_path_date("requerimientos", base_dir="Entrada")
 
     clean_csv_file(
-        ruta_entrada="Entrada/sc_req_item.csv",
-        ruta_salida=ruta_salida,
+        input_path="Entrada/sc_req_item.csv",
+        output_path=output_path,
         encoding="latin-1",
         replacement=" ",
-        cambiar_separador=True,
-        nuevo_separador=';'
+        change_separator=True,
+        new_separator=';'
     )
 
-    df_requerimientos = pd.read_csv(
-        ruta_salida,
+    df_requirements = pd.read_csv(
+        output_path,
         sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1'
     )
 
-    print(f"Loaded {len(df_requerimientos)} requirements")
+    print(f"Loaded {len(df_requirements)} requirements")
 
-    original_columns = list(df_requerimientos.columns)
+    original_columns = list(df_requirements.columns)
 
-    return df_requerimientos, timing, original_columns
+    return df_requirements, timing, original_columns
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────────
 
 def main():
-    """Main assignment workflow for requirements."""
+    """Flujo de trabajo principal de asignación para requerimientos."""
     try:
-        df_requerimientos, timing, original_columns = load_and_clean_data()
+        df_requirements, timing, original_columns = load_and_clean_data()
     except Exception as e:
         print(f"Error loading data: {e}. Please ensure Entrada/sc_req_item.csv exists.")
         return
 
-    if df_requerimientos.empty:
-        print("No requirements to process.")
-        return
-
     balancer = WorkloadBalancer(
-        grupos_path="Especificaciones/Grupos - Requerimientos(Grupos).csv",
-        usuarios_path="Especificaciones/Grupos - Usuarios.csv",
+        groups_path="Especificaciones/Grupos - Requerimientos(Grupos).csv",
+        users_path="Especificaciones/Grupos - Usuarios.csv",
     )
 
     print("Making assignment predictions for requirements...")
-    df_requerimientos = predict_requirement_assignments(df_requerimientos, balancer)
+    df_requirements = predict_requirement_assignments(df_requirements, balancer)
 
-    generate_assignment_reports(df_requerimientos, timing, balancer)
+    generate_assignment_reports(df_requirements, timing, balancer)
 
     try:
-        df_requerimientos["assigned_to"]       = df_requerimientos["predicted_assigned_to"]
-        df_requerimientos["assignment_group"]  = df_requerimientos["predicted_assignment_group"]
-        df_to_append = df_requerimientos[original_columns]
+        df_requirements["assigned_to"]       = df_requirements["predicted_assigned_to"]
+        df_requirements["assignment_group"]  = df_requirements["predicted_assignment_group"]
+        df_to_append = df_requirements[original_columns]
         df_to_append.to_csv(
             "Especificaciones/assigned_requirements.csv",
             mode='a', index=False, header=False, sep=',', encoding='utf-8'

@@ -16,14 +16,14 @@ def _normalize_text(text):
     return s
 
 class WorkloadBalancer:
-    def __init__(self, grupos_path="Especificaciones/Grupos - Incidentes(Grupos).csv", usuarios_path="Especificaciones/Grupos - Usuarios.csv", assigned_incidents="Especificaciones/assigned_incidents.csv", assigned_requirements="Especificaciones/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7, turnos_path="Especificaciones/Turnos.csv"):
-        self.grupos_path = grupos_path
-        self.usuarios_path = usuarios_path
+    def __init__(self, groups_path="Especificaciones/Grupos - Incidentes(Grupos).csv", users_path="Especificaciones/Grupos - Usuarios.csv", assigned_incidents="Especificaciones/assigned_incidents.csv", assigned_requirements="Especificaciones/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7, shifts_path="Especificaciones/Turnos.csv"):
+        self.groups_path = groups_path
+        self.users_path = users_path
         self.assigned_incidents = assigned_incidents
         self.assigned_requirements = assigned_requirements
         self.resolved_weight = resolved_weight
         self.resolved_days_window = resolved_days_window
-        self.turnos_path = turnos_path
+        self.shifts_path = shifts_path
         self.workload = {}
         self.resolved_workload = {}
         self.group_members_l1 = {}
@@ -34,31 +34,31 @@ class WorkloadBalancer:
         self.username_to_realname = {}
         self.name_tokens_to_username = {}
         self.active_usernames = set()
-        self.df_turnos = None
+        self.df_shifts = None
 
-        self._load_grupos()
-        self._load_usuarios()
-        self._load_turnos()
+        self._load_groups()
+        self._load_users()
+        self._load_shifts()
         self._load_initial_workload()
 
-    def _load_turnos(self):
-        if not self.turnos_path or not os.path.exists(self.turnos_path):
-            print(f"Warning: {self.turnos_path} not found. Shift assignments will default to 'TURNO'.")
+    def _load_shifts(self):
+        if not self.shifts_path or not os.path.exists(self.shifts_path):
+            print(f"Warning: {self.shifts_path} not found. Shift assignments will default to 'TURNO'.")
             return
         try:
-            df = pd.read_csv(self.turnos_path, sep=';', encoding='latin-1', dtype=str)
+            df = pd.read_csv(self.shifts_path, sep=';', encoding='latin-1', dtype=str)
             if len(df.columns) == 1:
-                df = pd.read_csv(self.turnos_path, sep=',', encoding='latin-1', dtype=str)
+                df = pd.read_csv(self.shifts_path, sep=',', encoding='latin-1', dtype=str)
             df.columns = [str(c).strip() for c in df.columns]
             if 'Fecha' in df.columns:
                 df['Fecha'] = df['Fecha'].str.strip()
-            self.df_turnos = df
-            print(f"Successfully loaded shifts configuration from {self.turnos_path}")
+            self.df_shifts = df
+            print(f"Successfully loaded shifts configuration from {self.shifts_path}")
         except Exception as e:
-            print(f"Warning: failed to load shifts configuration from {self.turnos_path}: {e}")
+            print(f"Warning: failed to load shifts configuration from {self.shifts_path}: {e}")
 
     def get_shift_user(self, row):
-        if self.df_turnos is None:
+        if self.df_shifts is None:
             return None
         ts_col = next((c for c in ['sys_created_on', 'opened_at'] if c in row), None)
         if not ts_col:
@@ -111,12 +111,12 @@ class WorkloadBalancer:
                         shift_date = date_val
             
             shift_date_str = shift_date.strftime('%d/%m/%Y')
-            if 'Fecha' not in self.df_turnos.columns or shift_col not in self.df_turnos.columns:
+            if 'Fecha' not in self.df_shifts.columns or shift_col not in self.df_shifts.columns:
                 return None
-            match_rows = self.df_turnos[self.df_turnos['Fecha'] == shift_date_str]
+            match_rows = self.df_shifts[self.df_shifts['Fecha'] == shift_date_str]
             if match_rows.empty:
                 shift_date_str_alt = shift_date.strftime('%Y-%m-%d')
-                match_rows = self.df_turnos[self.df_turnos['Fecha'] == shift_date_str_alt]
+                match_rows = self.df_shifts[self.df_shifts['Fecha'] == shift_date_str_alt]
             if not match_rows.empty:
                 val = match_rows.iloc[0][shift_col]
                 if pd.notna(val) and str(val).strip() != '':
@@ -126,106 +126,98 @@ class WorkloadBalancer:
             print(f"Error resolving shift user: {e}")
         return None
 
-    def _load_grupos(self):
-        if not os.path.exists(self.grupos_path):
-            print(f"Warning: {self.grupos_path} not found.")
+    def _load_groups(self):
+        if not os.path.exists(self.groups_path):
+            print(f"Warning: {self.groups_path} not found.")
             return
             
         try:
-            # Intentar leer por coma primero
-            df_grupos = pd.read_csv(self.grupos_path, sep=',', encoding='latin-1', dtype=str)
-            if len(df_grupos.columns) == 1:
-                # Fallback a punto y coma
-                df_grupos = pd.read_csv(self.grupos_path, sep=';', encoding='latin-1', dtype=str)
+            # Try comma first
+            df_groups = pd.read_csv(self.groups_path, sep=',', encoding='latin-1', dtype=str)
+            if len(df_groups.columns) == 1:
+                # Fallback to semicolon
+                df_groups = pd.read_csv(self.groups_path, sep=';', encoding='latin-1', dtype=str)
         except Exception:
-            df_grupos = pd.read_csv(self.grupos_path, sep=';', encoding='latin-1', dtype=str)
+            df_groups = pd.read_csv(self.groups_path, sep=';', encoding='latin-1', dtype=str)
             
-        # El nuevo formato: Las columnas son los Macrogrupos, las filas debajo son los miembros
         def _singularize_phrase(s):
             tokens = s.split()
             tokens = [t[:-1] if t.endswith('s') else t for t in tokens]
             return ' '.join(tokens)
 
-        for col in df_grupos.columns:
-            macrogrupo = str(col).strip().upper()
-            if not macrogrupo or macrogrupo == 'NAN':
+        for col in df_groups.columns:
+            macro_group = str(col).strip().upper()
+            if not macro_group or macro_group == 'NAN':
                 continue
 
-            # Build classification -> macrogrupo mapping using normalized keys
+            # Build classification -> macro_group mapping using normalized keys
             norm_col = _normalize_text(col)
             sing_col = _singularize_phrase(norm_col)
             if norm_col:
-                self.classification_to_group[norm_col] = macrogrupo
+                self.classification_to_group[norm_col] = macro_group
             if sing_col and sing_col != norm_col:
-                self.classification_to_group[sing_col] = macrogrupo
+                self.classification_to_group[sing_col] = macro_group
 
-            for val in df_grupos[col]:
+            for val in df_groups[col]:
                 if pd.isna(val):
                     continue
-                nombre = str(val).strip().upper()
-                if not nombre or nombre == 'NAN':
+                name = str(val).strip().upper()
+                if not name or name == 'NAN':
                     continue
 
-                # Asignamos la persona al macrogrupo en Nivel 1 (igual prioridad para todos)
-                self.group_members_l1.setdefault(macrogrupo, []).append(nombre)
-                self.name_to_group[nombre] = macrogrupo
+                self.group_members_l1.setdefault(macro_group, []).append(name)
+                self.name_to_group[name] = macro_group
 
-                if nombre not in self.workload:
-                    self.workload[nombre] = 0
+                if name not in self.workload:
+                    self.workload[name] = 0
 
-    def _load_usuarios(self):
-        if not os.path.exists(self.usuarios_path):
-            print(f"Warning: {self.usuarios_path} not found.")
+    def _load_users(self):
+        if not os.path.exists(self.users_path):
+            print(f"Warning: {self.users_path} not found.")
             return
 
         try:
             try:
-                # Intentar leer por coma primero
-                df_usuarios = pd.read_csv(self.usuarios_path, sep=',', encoding='latin-1', dtype=str)
-                if len(df_usuarios.columns) == 1:
-                    # Fallback a punto y coma
-                    df_usuarios = pd.read_csv(self.usuarios_path, sep=';', encoding='latin-1', dtype=str)
+                # Try comma first
+                df_users = pd.read_csv(self.users_path, sep=',', encoding='latin-1', dtype=str)
+                if len(df_users.columns) == 1:
+                    # Fallback to semicolon
+                    df_users = pd.read_csv(self.users_path, sep=';', encoding='latin-1', dtype=str)
             except Exception:
-                df_usuarios = pd.read_csv(self.usuarios_path, sep=';', encoding='latin-1', dtype=str)
+                df_users = pd.read_csv(self.users_path, sep=';', encoding='latin-1', dtype=str)
 
-            df_usuarios.columns = [str(c).strip() for c in df_usuarios.columns]
+            df_users.columns = [str(c).strip() for c in df_users.columns]
 
-            if 'Nombre' not in df_usuarios.columns or 'Usuario' not in df_usuarios.columns:
-                print(f"Warning: {self.usuarios_path} missing expected columns 'Nombre'/'Usuario'.")
+            if 'Nombre' not in df_users.columns or 'Usuario' not in df_users.columns:
+                print(f"Warning: {self.users_path} missing expected columns 'Nombre'/'Usuario'.")
                 return
 
-            for _, row in df_usuarios.iterrows():
-                usuario_raw = row.get('Usuario')
-                nombre_raw = row.get('Nombre')
-                if pd.isna(usuario_raw) or pd.isna(nombre_raw):
+            for _, row in df_users.iterrows():
+                username_raw = row.get('Usuario')
+                name_raw = row.get('Nombre')
+                if pd.isna(username_raw) or pd.isna(name_raw):
                     continue
 
-                username = str(usuario_raw).strip().upper()
-                nombre = str(nombre_raw).strip().upper()
-                if not username or not nombre:
+                username = str(username_raw).strip().upper()
+                name = str(name_raw).strip().upper()
+                if not username or not name:
                     continue
 
-                self.username_to_realname[username] = nombre
+                self.username_to_realname[username] = name
 
-                token_key = ' '.join(sorted(_normalize_text(nombre).upper().split()))
+                token_key = ' '.join(sorted(_normalize_text(name).upper().split()))
                 if token_key:
                     self.name_tokens_to_username[token_key] = username
 
-                estado_raw = row.get('Estado')
-                is_active = str(estado_raw).strip() == '1' if not pd.isna(estado_raw) else True
+                status_raw = row.get('Estado')
+                is_active = str(status_raw).strip() == '1' if not pd.isna(status_raw) else True
                 if is_active:
                     self.active_usernames.add(username)
         except Exception as e:
-            print(f"Warning: failed to load {self.usuarios_path}: {e}")
+            print(f"Warning: failed to load {self.users_path}: {e}")
 
     def _canonical_assignee(self, name):
-        """Resuelve un valor de `assigned_to` (username o nombre real) al username canónico.
-
-        Permite combinar la carga de tickets registrados con el username (ej. LJDELGAD)
-        con la carga de tickets antiguos registrados con el nombre completo
-        (ej. LEONELA JACKELINE DELGADO MENDIETA), evitando que se traten como dos
-        personas distintas en self.workload / self.resolved_workload.
-        """
+        """Resuelve un valor de `assigned_to` (username o nombre real) al username canónico."""
         name_upper = str(name).strip().upper()
         if name_upper in self.username_to_realname:
             return name_upper
@@ -234,24 +226,16 @@ class WorkloadBalancer:
         return self.name_tokens_to_username.get(token_key, name_upper)
 
     def is_active(self, name):
-        """Devuelve True si el usuario está activo (Estado=1) en el CSV de usuarios.
-
-        Acepta tanto username (ej. LJDELGAD) como nombre completo (ej. LEONELA JACKELINE DELGADO).
-        Si no hay información de estado cargada, asume activo.
-        """
+        """Devuelve True si el usuario está activo (Estado=1) en el CSV de usuarios."""
+        canonical = self._canonical_assignee(name)
         if not self.active_usernames:
             return True
-        name_upper = str(name).strip().upper()
-        if name_upper in self.active_usernames:
-            return True
-        token_key = ' '.join(sorted(_normalize_text(name_upper).upper().split()))
-        username = self.name_tokens_to_username.get(token_key)
-        return username in self.active_usernames if username else False
+        return canonical in self.active_usernames
 
     def display_name(self, key):
-        if key in self.username_to_realname:
-            return f"{self.username_to_realname[key]} ({key})"
-        return key
+        """Devuelve el username canónico o el nombre real."""
+        canonical = self._canonical_assignee(key)
+        return self.username_to_realname.get(canonical, canonical)
 
     def _load_initial_workload(self):
         print("Calculating initial workload...")
@@ -260,27 +244,23 @@ class WorkloadBalancer:
                 temp_cleaned = file_path + ".temp.csv"
                 try:
                     clean_csv_file(
-                        ruta_entrada=file_path,
-                        ruta_salida=temp_cleaned,
+                        input_path=file_path,
+                        output_path=temp_cleaned,
                         encoding="latin-1",
                         replacement=" ",
-                        cambiar_separador=True,
-                        nuevo_separador=';'
+                        change_separator=True,
+                        new_separator=';'
                     )
                     
                     df = pd.read_csv(temp_cleaned, sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1')
 
-                    # --- MODIFICACIÓN: contabilizar resueltos para penalización parcial ---
-                    # Antes se ignoraban los tickets cerrados; ahora se acumulan en resolved_workload
-                    # para que personas que resuelven muchos tickets también tengan mayor carga efectiva
-                    # y no reciban desproporcionadamente más asignaciones que sus compañeros.
                     if 'state' in df.columns and 'assigned_to' in df.columns:
                         df_resolved = df[df['state'].str.strip().str.title().isin(['Resuelto', 'Cerrado'])]
                         # Filtrar por ventana de tiempo si está configurada y existe columna de fecha
                         if self.resolved_days_window is not None and 'resolved_at' in df_resolved.columns:
                             cutoff = datetime.now() - timedelta(days=self.resolved_days_window)
-                            fechas = pd.to_datetime(df_resolved['resolved_at'], dayfirst=True, errors='coerce')
-                            df_resolved = df_resolved[fechas >= cutoff]
+                            dates = pd.to_datetime(df_resolved['resolved_at'], dayfirst=True, errors='coerce')
+                            df_resolved = df_resolved[dates >= cutoff]
                         for name in df_resolved['assigned_to'].dropna():
                             name_str = self._canonical_assignee(name)
                             self.resolved_workload[name_str] = self.resolved_workload.get(name_str, 0) + 1

@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime
 
-# Add the parent directory to sys.path so we can import Programas.LoadBalancer
+# Agregar el directorio padre a sys.path para poder importar Programas.LoadBalancer
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from Programas.LoadBalancer import WorkloadBalancer
@@ -11,8 +11,8 @@ from Programas.LoadBalancer import WorkloadBalancer
 def generate_report():
     print("Generating comprehensive group workload report...")
     
-    # 1. Get workloads using the existing WorkloadBalancer class
-    # We suppress standard output for this part just to keep the console clean
+    # 1. Obtener cargas de trabajo usando la clase WorkloadBalancer existente
+    # Ocultamos la salida estándar de esta parte para mantener limpia la consola
     import io
     from contextlib import redirect_stdout
     
@@ -21,47 +21,47 @@ def generate_report():
     
     workload = balancer.workload
     
-    # 2. Parse Grupos CSV to map groups to users
-    grupos_path = "Especificaciones/Grupos - Incidentes(Grupos).csv"
-    if not os.path.exists(grupos_path):
-        print(f"Error: {grupos_path} not found.")
+    # 2. Analizar CSV de Grupos para mapear grupos a usuarios
+    groups_path = "Especificaciones/Grupos - Incidentes(Grupos).csv"
+    if not os.path.exists(groups_path):
+        print(f"Error: {groups_path} not found.")
         return
         
     try:
-        df_grupos = pd.read_csv(grupos_path, sep=',', encoding='latin-1', dtype=str)
-        if len(df_grupos.columns) == 1:
-            df_grupos = pd.read_csv(grupos_path, sep=';', encoding='latin-1', dtype=str)
+        df_groups = pd.read_csv(groups_path, sep=',', encoding='latin-1', dtype=str)
+        if len(df_groups.columns) == 1:
+            df_groups = pd.read_csv(groups_path, sep=';', encoding='latin-1', dtype=str)
     except Exception:
-        df_grupos = pd.read_csv(grupos_path, sep=';', encoding='latin-1', dtype=str)
+        df_groups = pd.read_csv(groups_path, sep=';', encoding='latin-1', dtype=str)
     
-    # Map: Group Name -> List of Users (dict containing name and active status)
+    # Mapeo: Nombre de grupo -> Lista de usuarios (dict con nombre y estado activo)
     groups_to_users = {}
     
-    for col in df_grupos.columns:
-        macrogrupo = str(col).strip().upper()
-        if not macrogrupo or macrogrupo == 'NAN':
+    for col in df_groups.columns:
+        macro_group = str(col).strip().upper()
+        if not macro_group or macro_group == 'NAN':
             continue
             
-        if macrogrupo not in groups_to_users:
-            groups_to_users[macrogrupo] = []
+        if macro_group not in groups_to_users:
+            groups_to_users[macro_group] = []
             
-        for val in df_grupos[col]:
+        for val in df_groups[col]:
             if pd.isna(val):
                 continue
-            nombre = str(val).strip().upper()
-            if not nombre or nombre == 'NAN':
+            name = str(val).strip().upper()
+            if not name or name == 'NAN':
                 continue
                 
-            # Check if user is already in this group
-            if not any(u['nombre'] == nombre for u in groups_to_users[macrogrupo]):
-                groups_to_users[macrogrupo].append({
-                    'nombre': nombre,
-                    'display': balancer.display_name(nombre),
-                    'activo': balancer.is_active(nombre),  #estado real del usuario 
-                    'tickets': workload.get(nombre, 0)
+            # Verificar si el usuario ya está en este grupo
+            if not any(u['name'] == name for u in groups_to_users[macro_group]):
+                groups_to_users[macro_group].append({
+                    'name': name,
+                    'display': balancer.display_name(name),
+                    'active': balancer.is_active(name),
+                    'tickets': workload.get(name, 0)
                 })
                     
-    # 3. Format Output
+    # 3. Formatear salida
     from Programas.CleaningData import get_output_path_date
     report_path, timing = get_output_path_date("reporte_carga_por_grupos", base_dir="Salida", ext=".txt")
     
@@ -70,18 +70,18 @@ def generate_report():
     report_lines.append("=" * 65)
     report_lines.append("Includes users from all their assigned groups (Hierarchy independent)\n")
     
-    # Sort groups alphabetically
-    for grupo in sorted(groups_to_users.keys()):
-        report_lines.append(f"\nGroup: {grupo}")
+    # Ordenar grupos alfabéticamente
+    for group in sorted(groups_to_users.keys()):
+        report_lines.append(f"\nGroup: {group}")
         report_lines.append("-" * 65)
         
-        users = groups_to_users[grupo]
-        # Sort users by ticket count (descending), then alphabetically
-        users.sort(key=lambda x: (-x['tickets'], x['nombre']))
+        users = groups_to_users[group]
+        # Ordenar usuarios por cantidad de tickets (descendente) y luego alfabéticamente
+        users.sort(key=lambda x: (-x['tickets'], x['name']))
         
         total_tickets = 0
         for user in users:
-            status = "" if user['activo'] else " [INACTIVE]"
+            status = "" if user['active'] else " [INACTIVE]"
             report_lines.append(f"{user['display'].ljust(50)} {user['tickets']:>3} tickets{status}")
             total_tickets += user['tickets']
             
@@ -91,10 +91,10 @@ def generate_report():
         
     output_text = "\n".join(report_lines)
     
-    # Print to console
+    # Imprimir en consola
     print("\n" + output_text)
     
-    # Save to file
+    # Guardar en archivo
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(output_text)
         

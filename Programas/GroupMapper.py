@@ -1,56 +1,55 @@
 import pandas as pd
 import os
 
-def add_group_to_predictions(df, prediction_col="predicted_assigned_to", output_col="predicted_assignment_group", grupos_path="Especificaciones/Grupos.csv"):
+def add_group_to_predictions(df, prediction_col="predicted_assigned_to", output_col="predicted_assignment_group", groups_path="Especificaciones/Grupos.csv"):
     """
-    Maps the predicted assignee names to their primary group based on Grupos.csv
+    Mapea los nombres de asignados predichos a su grupo primario según Grupos.csv
     """
     if prediction_col not in df.columns:
         return df
         
     print("Mapping predicted assignees to their primary group...")
     
-    # Check if Grupos.csv exists
-    if not os.path.exists(grupos_path):
-        print(f"Warning: {grupos_path} not found. Cannot map groups.")
+    # Verificar si Grupos.csv existe
+    if not os.path.exists(groups_path):
+        print(f"Warning: {groups_path} not found. Cannot map groups.")
         df[output_col] = "NO GROUP FOUND"
         return df
         
     try:
-        # Load Grupos.csv. Assuming utf-8 or latin-1 encoding might be used.
-        # We will use python engine and skip bad lines just in case
-        df_grupos = pd.read_csv(grupos_path, sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1')
+        # Cargar Grupos.csv
+        df_groups = pd.read_csv(groups_path, sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1')
         
-        # Create a dictionary mapping NOMBRE to GRUPO 1
+        # Crear un diccionario mapeando NOMBRE a GRUPO 1
         mapping_dict = {}
-        for _, row in df_grupos.iterrows():
-            # Get name and uppercase it for robust matching
-            nombre = str(row.get('NOMBRE', '')).strip().upper()
+        for _, row in df_groups.iterrows():
+            # Obtener el nombre y convertirlo a mayúsculas para un emparejamiento robusto
+            name = str(row.get('NOMBRE', '')).strip().upper()
             
-            # Get the primary group (GRUPO 1)
-            grupo = str(row.get('GRUPO 1', '')).strip()
+            # Obtener el grupo primario (GRUPO 1)
+            group = str(row.get('GRUPO 1', '')).strip()
             
-            # If the group is empty or nan, assign "NO GROUP FOUND"
-            if not grupo or grupo.lower() == 'nan':
-                grupo = "NO GROUP FOUND"
+            # Si el grupo está vacío o es nan, asignar "NO GROUP FOUND"
+            if not group or group.lower() == 'nan':
+                group = "NO GROUP FOUND"
                 
-            if nombre and nombre.lower() != 'nan':
-                mapping_dict[nombre] = grupo
+            if name and name.lower() != 'nan':
+                mapping_dict[name] = group
                 
-        # Function to map individual names
+        # Función para mapear nombres individuales
         def map_group(name):
             if pd.isna(name):
                 return "NO GROUP FOUND"
                 
             name_str = str(name).strip().upper()
             
-            # Special cases
+            # Casos especiales
             if name_str == "TURNO":
                 return "TURNO"
                 
             return mapping_dict.get(name_str, "NO GROUP FOUND")
             
-        # Apply the mapping
+        # Aplicar el mapeo
         df[output_col] = df[prediction_col].apply(map_group)
         print("Group mapping completed successfully.")
         
