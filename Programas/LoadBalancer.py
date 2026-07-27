@@ -16,7 +16,7 @@ def _normalize_text(text):
     return s
 
 class WorkloadBalancer:
-    def __init__(self, grupos_path="Entrada/Grupos - Incidentes(Grupos).csv", usuarios_path="Entrada/Grupos - Usuarios.csv", assigned_incidents="Entrada/assigned_incidents.csv", assigned_requirements="Entrada/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7, turnos_path="Entrada/Turnos.csv"):
+    def __init__(self, grupos_path="Especificaciones/Grupos - Incidentes(Grupos).csv", usuarios_path="Especificaciones/Grupos - Usuarios.csv", assigned_incidents="Especificaciones/assigned_incidents.csv", assigned_requirements="Especificaciones/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7, turnos_path="Especificaciones/Turnos.csv"):
         self.grupos_path = grupos_path
         self.usuarios_path = usuarios_path
         self.assigned_incidents = assigned_incidents

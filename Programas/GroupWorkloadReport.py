@@ -22,7 +22,7 @@ def generate_report():
     workload = balancer.workload
     
     # 2. Parse Grupos CSV to map groups to users
-    grupos_path = "Entrada/Grupos - Incidentes(Grupos).csv"
+    grupos_path = "Especificaciones/Grupos - Incidentes(Grupos).csv"
     if not os.path.exists(grupos_path):
         print(f"Error: {grupos_path} not found.")
         return

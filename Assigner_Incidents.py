@@ -261,8 +261,8 @@ def main():
         df_incidentes["assigned_to"] = df_incidentes["predicted_assigned_to"]
         df_incidentes["assignment_group"] = df_incidentes["predicted_assignment_group"]
         df_to_append = df_incidentes[original_columns]
-        df_to_append.to_csv("Entrada/assigned_incidents.csv", mode='a', index=False, header=False, sep=',', encoding='utf-8')
-        print("Successfully updated Entrada/assigned_incidents.csv")
+        df_to_append.to_csv("Especificaciones/assigned_incidents.csv", mode='a', index=False, header=False, sep=',', encoding='utf-8')
+        print("Successfully updated Especificaciones/assigned_incidents.csv")
     except Exception as e:
         print(f"Error updating assigned file: {e}")
     

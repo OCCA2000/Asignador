@@ -349,8 +349,8 @@ def main():
         return
 
     balancer = WorkloadBalancer(
-        grupos_path="Entrada/Grupos - Requerimientos(Grupos).csv",
-        usuarios_path="Entrada/Grupos - Usuarios.csv",
+        grupos_path="Especificaciones/Grupos - Requerimientos(Grupos).csv",
+        usuarios_path="Especificaciones/Grupos - Usuarios.csv",
     )
 
     print("Making assignment predictions for requirements...")
@@ -363,10 +363,10 @@ def main():
         df_requerimientos["assignment_group"]  = df_requerimientos["predicted_assignment_group"]
         df_to_append = df_requerimientos[original_columns]
         df_to_append.to_csv(
-            "Entrada/assigned_requirements.csv",
+            "Especificaciones/assigned_requirements.csv",
             mode='a', index=False, header=False, sep=',', encoding='utf-8'
         )
-        print("Successfully updated Entrada/assigned_requirements.csv")
+        print("Successfully updated Especificaciones/assigned_requirements.csv")
     except Exception as e:
         print(f"Error updating assigned file: {e}")
 

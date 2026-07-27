@@ -40,8 +40,9 @@ LOAD_TIME = 5.0            # Time to wait for ticket page to load
 CLIPBOARD_TIME = 0.5       # Time to wait after copy/paste operations
 
 # Configuration and data directories
-INCIDENT_CONFIG_FILE = "rpa_config_incidents.json"
-REQUIREMENT_CONFIG_FILE = "rpa_config_requirements.json"
+ESPECIFICACIONES_DIR = "Especificaciones"
+INCIDENT_CONFIG_FILE = os.path.join(ESPECIFICACIONES_DIR, "rpa_config_incidents.json")
+REQUIREMENT_CONFIG_FILE = os.path.join(ESPECIFICACIONES_DIR, "rpa_config_requirements.json")
 ENTRADA_DIR = "Entrada"
 SALIDA_DIR = "Salida"
 
@@ -50,6 +51,7 @@ SALIDA_DIR = "Salida"
 # ==========================================
 def run_setup():
     """Interactively captures screen coordinates for input fields and buttons."""
+    os.makedirs(ESPECIFICACIONES_DIR, exist_ok=True)
     print("\n" + "="*50)
     print("      SERVICENOW RPA SETUP & COORDINATES CALIBRATION")
     print("="*50)
@@ -151,9 +153,14 @@ def run_setup():
 def load_config(config_file):
     """Loads calibration coordinates from the JSON configuration file."""
     # Legacy fallback for incidents
-    if config_file == INCIDENT_CONFIG_FILE and not os.path.exists(config_file) and os.path.exists("rpa_config.json"):
-        print("Using legacy configuration file: rpa_config.json")
-        config_file = "rpa_config.json"
+    if config_file == INCIDENT_CONFIG_FILE and not os.path.exists(config_file):
+        legacy_spec = os.path.join(ESPECIFICACIONES_DIR, "rpa_config.json")
+        if os.path.exists(legacy_spec):
+            print("Using legacy configuration file: Especificaciones/rpa_config.json")
+            config_file = legacy_spec
+        elif os.path.exists("rpa_config.json"):
+            print("Using legacy configuration file: rpa_config.json")
+            config_file = "rpa_config.json"
         
     if not os.path.exists(config_file):
         print(f"\n[ERROR] Configuration file '{config_file}' not found.")

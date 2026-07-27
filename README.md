@@ -41,7 +41,8 @@ Asignador/
 │   ├── supervised_model/       # Modelos supervisados para requerimientos
 │   ├── semisupervised_model/   # Modelos semisupervisados para requerimientos
 │   └── unsupervised_model/     # Modelos no supervisados (clusters) para requerimientos
-├── Entrada/                    # Archivos de entrada para procesamiento (incident.csv, requirements.csv)
+├── Entrada/                    # Archivos de entrada de tickets (incident.csv, sc_req_item.csv, e histórico en carpetas por fecha)
+├── Especificaciones/           # Parámetros (Grupos, Usuarios, Turnos) y archivos de configuración RPA
 └── Salida/                     # Reportes y CSVs finales de asignación generados
 ```
 
@@ -110,7 +111,7 @@ El sistema aplica reglas automáticas para derivar incidentes específicos al pe
 - **Monitoreo**: Medio de contacto (contact_type) es "Monitoreo"
 
 #### Shift Configuration (Turnos.csv)
-Cuando un ticket es clasificado como de turno, el balanceador de carga (`Programas/LoadBalancer.py`) consulta el archivo `Entrada/Turnos.csv` para asignar automáticamente el ticket al usuario en turno específico, dependiendo de la fecha y hora de creación del ticket (`sys_created_on` o `opened_at`):
+Cuando un ticket es clasificado como de turno, el balanceador de carga (`Programas/LoadBalancer.py`) consulta el archivo `Especificaciones/Turnos.csv` para asignar automáticamente el ticket al usuario en turno específico, dependiendo de la fecha y hora de creación del ticket (`sys_created_on` o `opened_at`):
 
 - **Lunes a Viernes:**
   - `06:00:00` a `13:59:59` -> **Turno 1**
@@ -125,20 +126,22 @@ Cuando un ticket es clasificado como de turno, el balanceador de carga (`Program
 - **Lunes temprano:**
   - `00:00:00` a `05:59:59` -> **Stand-by** (perteneciente al domingo de guardia)
 
-Si el archivo `Entrada/Turnos.csv` no se encuentra o no contiene una coincidencia para el día y turno correspondiente, el ticket se asigna genéricamente a `"TURNO"`.
+Si el archivo `Especificaciones/Turnos.csv` no se encuentra o no contiene una coincidencia para el día y turno correspondiente, el ticket se asigna genéricamente a `"TURNO"`.
 
 ## Data Format
 
-### Archivos de Entrada
+### Archivos de Entrada (Entrada/)
 - `Entrada/incident.csv` - Listado de incidentes activos descargados de ServiceNow
 - `Entrada/sc_req_item.csv` - Listado de requerimientos activos descargados de ServiceNow
-- `Entrada/Turnos.csv` - Cuadrante de turnos diario con columnas: `Fecha`, `Turno 1`, `Turno 2`, `Turno 3`, `Turno 4` y `Stand-by`
-- `Entrada/Grupos - Incidentes(Grupos).csv` y `Entrada/Grupos - Requerimientos(Grupos).csv` - Configuración de miembros por cada macrogrupo
-- `Entrada/Grupos - Usuarios.csv` - Listado general de usuarios de TI, sus usernames canónicos y estado de disponibilidad (`Estado = 1` para activo)
+- `Entrada/YYYY-MM-DD/` - Carpetas por fecha con histórico de archivos de entrada procesados
 
-### Archivos de Configuración RPA
-- `rpa_config_incidents.json` - Coordenadas de pantalla calibradas para actualizar Incidentes (2 campos)
-- `rpa_config_requirements.json` - Coordenadas de pantalla calibradas para actualizar Requerimientos (5 campos)
+### Archivos de Parámetros y Configuración (Especificaciones/)
+- `Especificaciones/assigned_incidents.csv` y `Especificaciones/assigned_requirements.csv` - Registro histórico acumulativo de asignaciones
+- `Especificaciones/Turnos.csv` - Cuadrante de turnos diario con columnas: `Fecha`, `Turno 1`, `Turno 2`, `Turno 3`, `Turno 4` y `Stand-by`
+- `Especificaciones/Grupos - Incidentes(Grupos).csv` y `Especificaciones/Grupos - Requerimientos(Grupos).csv` - Configuración de miembros por cada macrogrupo
+- `Especificaciones/Grupos - Usuarios.csv` - Listado general de usuarios de TI, sus usernames canónicos y estado de disponibilidad (`Estado = 1` para activo)
+- `Especificaciones/rpa_config_incidents.json` - Coordenadas de pantalla calibradas para actualizar Incidentes (2 campos)
+- `Especificaciones/rpa_config_requirements.json` - Coordenadas de pantalla calibradas para actualizar Requerimientos (5 campos)
 
 ### Archivos de Salida
 - `Salida/incidentes_con_asignacion_{timestamp}.csv` - Incidentes con asignaciones y grupos mapeados

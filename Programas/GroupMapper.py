@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 
-def add_group_to_predictions(df, prediction_col="predicted_assigned_to", output_col="predicted_assignment_group", grupos_path="Entrada/Grupos.csv"):
+def add_group_to_predictions(df, prediction_col="predicted_assigned_to", output_col="predicted_assignment_group", grupos_path="Especificaciones/Grupos.csv"):
     """
     Maps the predicted assignee names to their primary group based on Grupos.csv
     """
