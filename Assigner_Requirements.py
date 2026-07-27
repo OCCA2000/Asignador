@@ -1,4 +1,4 @@
-from Programas.CleaningData import limpiar_archivo_csv
+from Programas.CleaningData import limpiar_archivo_csv, obtener_ruta_salida_fecha
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import glob
@@ -311,15 +311,11 @@ def load_and_clean_data():
     """Load and clean requirement data files."""
     print("Loading and cleaning requirement data files...")
 
-    for file in glob.glob("Entrada/requerimientos*"):
-        print("Eliminando", file)
-        os.remove(file)
-
-    timing = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    ruta_salida, timing = obtener_ruta_salida_fecha("requerimientos", base_dir="Entrada")
 
     limpiar_archivo_csv(
         ruta_entrada="Entrada/sc_req_item.csv",
-        ruta_salida=f"Entrada/requerimientos_{timing}.csv",
+        ruta_salida=ruta_salida,
         encoding="latin-1",
         replacement=" ",
         cambiar_separador=True,
@@ -327,7 +323,7 @@ def load_and_clean_data():
     )
 
     df_requerimientos = pd.read_csv(
-        f"Entrada/requerimientos_{timing}.csv",
+        ruta_salida,
         sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1'
     )
 

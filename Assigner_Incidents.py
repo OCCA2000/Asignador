@@ -1,4 +1,4 @@
-from Programas.CleaningData import limpiar_archivo_csv
+from Programas.CleaningData import limpiar_archivo_csv, obtener_ruta_salida_fecha
 from datetime import datetime
 import glob
 import os
@@ -216,17 +216,12 @@ def load_and_clean_data():
     """Load and clean incident data files"""
     print("Loading and cleaning incident data files...")
     
-    # Clean old processed files
-    for file in glob.glob("Entrada/incidentes*"):
-        print("Eliminando", file)
-        os.remove(file)
-
-    timing = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    ruta_salida, timing = obtener_ruta_salida_fecha("incidentes", base_dir="Entrada")
     
     # Clean data files
     limpiar_archivo_csv(
         ruta_entrada="Entrada/incident.csv",
-        ruta_salida=f"Entrada/incidentes_{timing}.csv",
+        ruta_salida=ruta_salida,
         encoding="latin-1",
         replacement=" ",
         cambiar_separador=True,
@@ -234,7 +229,7 @@ def load_and_clean_data():
     )
     
     # Load cleaned data
-    df_incidentes = pd.read_csv(f"Entrada/incidentes_{timing}.csv", sep=';', dtype=str, engine='python',
+    df_incidentes = pd.read_csv(ruta_salida, sep=';', dtype=str, engine='python',
                      on_bad_lines='skip', encoding='latin-1')
     
     print(f"Loaded {len(df_incidentes)} incidents")

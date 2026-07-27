@@ -1,3 +1,7 @@
+import os
+from datetime import datetime
+
+
 def fix_newlines_inside_quotes(text: str, replacement: str = " ") -> str:
     """
     Reemplaza saltos de línea (\n y \r) solo cuando ocurren dentro de comillas dobles.
@@ -77,6 +81,23 @@ def replace_commas_outside_quotes(text: str, to_separator: str = ';') -> str:
     return ''.join(result)
 
 
+def obtener_ruta_salida_fecha(prefix: str, base_dir: str = "Entrada", timing: str = None) -> tuple:
+    """
+    Genera la ruta de salida organizada por carpetas con la fecha actual (YYYY-MM-DD)
+    dentro del directorio base (por defecto 'Entrada').
+    Devuelve la tupla (ruta_salida, timing).
+    """
+    now = datetime.now()
+    fecha_folder = now.strftime('%Y-%m-%d')
+    if timing is None:
+        timing = now.strftime('%Y-%m-%d_%H-%M-%S')
+
+    dir_salida = os.path.join(base_dir, fecha_folder)
+    os.makedirs(dir_salida, exist_ok=True)
+    ruta_salida = os.path.join(dir_salida, f"{prefix}_{timing}.csv")
+    return ruta_salida, timing
+
+
 def limpiar_archivo_csv(ruta_entrada: str, ruta_salida: str, encoding: str = "utf-8",
                         replacement: str = " ", cambiar_separador: bool = True,
                         nuevo_separador: str = ';'):
@@ -85,6 +106,10 @@ def limpiar_archivo_csv(ruta_entrada: str, ruta_salida: str, encoding: str = "ut
     y opcionalmente cambia el separador de coma a 'nuevo_separador' fuera de comillas.
     Escribe el resultado en ruta_salida.
     """
+    dir_salida = os.path.dirname(ruta_salida)
+    if dir_salida:
+        os.makedirs(dir_salida, exist_ok=True)
+
     with open(ruta_entrada, 'r', encoding=encoding, newline='') as f:
         contenido = f.read()
 
@@ -106,3 +131,4 @@ def limpiar_texto_csv(texto: str, replacement: str = " ", cambiar_separador: boo
     if cambiar_separador:
         limpio = replace_commas_outside_quotes(limpio, to_separator=nuevo_separador)
     return limpio
+
