@@ -199,12 +199,19 @@ def move_latest_download(pattern, destination_name):
     dest_path = os.path.join(ENTRADA_DIR, destination_name)
     os.makedirs(ENTRADA_DIR, exist_ok=True)
     
+    # Remove destination file if it already exists to avoid conflicts
+    if os.path.exists(dest_path):
+        try:
+            os.remove(dest_path)
+        except Exception:
+            pass
+
     try:
-        shutil.copy2(latest_file, dest_path)
-        print(f"Archivo copiado: {latest_file} -> {dest_path}")
+        shutil.move(latest_file, dest_path)
+        print(f"Archivo movido: {latest_file} -> {dest_path}")
         return True
     except Exception as e:
-        print(f"Error al copiar el archivo {latest_file}: {e}")
+        print(f"Error al mover el archivo {latest_file}: {e}")
         return False
 
 def find_latest_output_file(pattern, min_mtime=None):
