@@ -10,6 +10,7 @@ Automatiza:
 
 import os
 import glob
+import sys
 import time
 import json
 import shutil
@@ -24,7 +25,7 @@ from Programas.CleaningData import archive_previous_files
 # ==========================================
 # CONFIGURACIÓN
 # ==========================================
-SERVICENOW_BASE_URL = "https://bancopichincha.service-now.com.mcas.ms"
+SERVICENOW_BASE_URL = "https://bancopichincha.service-now.com"
 
 # Determina si descargar archivos de ServiceNow o usar los existentes en Entrada/
 SKIP_DOWNLOAD = True
@@ -261,10 +262,12 @@ def run_predictions():
     archive_previous_files(SALIDA_DIR, "*.csv")
     archive_previous_files(SALIDA_DIR, "*.txt")
     
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
     # Run Incident Assigner
     print("Running Assigner_Incidents.py...")
     try:
-        subprocess.run(["py", "Assigner_Incidents.py"], check=True)
+        subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], check=True, cwd=script_dir)
         print("Incident predictions complete!")
     except subprocess.CalledProcessError as e:
         print(f"Error executing Assigner_Incidents.py: {e}")
@@ -272,7 +275,7 @@ def run_predictions():
     # Run Requirement Assigner
     print("\nRunning Assigner_Requirements.py...")
     try:
-        subprocess.run(["py", "Assigner_Requirements.py"], check=True)
+        subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], check=True, cwd=script_dir)
         print("Requirement predictions complete!")
     except subprocess.CalledProcessError as e:
         print(f"Error executing Assigner_Requirements.py: {e}")
