@@ -369,10 +369,8 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
             print("Changing status from 'Nuevo' to 'En proceso'...")
             pyautogui.click(status_x, status_y)
             time.sleep(0.5)
-            pyperclip.copy("En proceso")
-            time.sleep(CLIPBOARD_TIME)
-            pyautogui.hotkey('ctrl', 'v')
-            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('down')
+            time.sleep(0.5)
             pyautogui.press('enter')
             # Esperar a que aparezca el cuadro de texto de fecha de vencimiento tras cambiar el estado
             print("Waiting for due date textbox to appear...")
