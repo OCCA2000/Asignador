@@ -343,7 +343,7 @@ class WorkloadBalancer:
                 df.at[idx, available_cls_col] = "turno"
                 continue
                 
-            if(classification_val == 'trickle feed' or classification_val == 'reportes batch'):
+            if(classification_val == 'trickle feed' or classification_val == 'reporte batch'):
                 shift_user = self.get_shift_user(row)
                 if shift_user:
                     new_assignees.append(shift_user)
