@@ -1,4 +1,4 @@
-from Programas.CleaningData import clean_csv_file, get_output_path_date
+from Programas.CleaningData import clean_csv_file, get_output_path_date, get_windows_date_format
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -147,8 +147,17 @@ def _build_final_text(row, min_tokens=4):
 # ── Fecha de resolución ──────────────────────────────────────────────────────────
 
 def calculate_resolution_date(opened_at_str):
+    win_fmt = get_windows_date_format()
     try:
-        assignment_date = pd.to_datetime(opened_at_str, format='%d/%m/%Y %H:%M:%S')
+        assignment_date = pd.to_datetime(opened_at_str, format=f"{win_fmt} %H:%M:%S", errors='coerce')
+        if pd.isna(assignment_date):
+            assignment_date = pd.to_datetime(opened_at_str, format=win_fmt, errors='coerce')
+        if pd.isna(assignment_date):
+            assignment_date = pd.to_datetime(opened_at_str, format='%d/%m/%Y %H:%M:%S', errors='coerce')
+        if pd.isna(assignment_date):
+            assignment_date = pd.to_datetime(opened_at_str, errors='coerce')
+        if pd.isna(assignment_date):
+            return None
     except Exception:
         return None
 
@@ -174,7 +183,7 @@ def calculate_resolution_date(opened_at_str):
 
     return assignment_date.replace(
         year=final_date.year, month=final_date.month, day=final_date.day
-    ).strftime('%Y-%m-%d %H:%M:%S')
+    ).strftime(f"{win_fmt} %H:%M:%S")
 
 
 # ── Predicción y asignación ──────────────────────────────────────────────────────

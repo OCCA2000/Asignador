@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
-from Programas.CleaningData import archive_previous_files
+from Programas.CleaningData import archive_previous_files, get_windows_date_format
 
 # ==========================================
 # CONFIGURACIÓN
@@ -388,7 +388,17 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
             due_date_str = ""
             if pd.notna(due_date) and str(due_date).strip():
                 try:
-                    for fmt in ('%Y-%m-%d %H:%M:%S', '%d/%m/%Y %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d'):
+                    win_fmt = get_windows_date_format()
+                    formats_to_try = (
+                        f"{win_fmt} %H:%M:%S",
+                        win_fmt,
+                        '%Y-%m-%d %H:%M:%S',
+                        '%d/%m/%Y %H:%M:%S',
+                        '%Y-%m-%d %H:%M:%S.%f',
+                        '%Y-%m-%d',
+                        '%d/%m/%Y'
+                    )
+                    for fmt in formats_to_try:
                         try:
                             dt = datetime.strptime(str(due_date).strip(), fmt)
                             due_date_str = dt.strftime('%d/%m/%Y %H:%M:%S')

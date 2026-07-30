@@ -166,3 +166,50 @@ def clean_csv_text(text: str, replacement: str = " ", change_separator: bool = T
         cleaned = replace_commas_outside_quotes(cleaned, to_separator=new_separator)
     return cleaned
 
+
+def get_windows_date_format() -> str:
+    """
+    Obtiene el formato de fecha corta configurado en el sistema Windows (sShortDate)
+    y lo traduce a un formato compatible con datetime de Python (por ejemplo, '%Y-%m-%d').
+    Si no está en Windows o falla, retorna '%Y-%m-%d' por defecto.
+    """
+    import platform
+    default_format = '%Y-%m-%d'
+    if platform.system() != 'Windows':
+        return default_format
+
+    try:
+        import winreg
+        key_path = r"Control Panel\International"
+        value_name = "sShortDate"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            val, _ = winreg.QueryValueEx(key, value_name)
+            if val:
+                fmt = str(val)
+                # Convertir formato de registro a formato de python strftime
+                # Reemplazar año
+                if 'yyyy' in fmt:
+                    fmt = fmt.replace('yyyy', '%Y')
+                elif 'yy' in fmt:
+                    fmt = fmt.replace('yy', '%y')
+                
+                # Reemplazar mes
+                if 'MM' in fmt:
+                    fmt = fmt.replace('MM', '%m')
+                else:
+                    fmt = fmt.replace('M', '%m')
+                
+                # Reemplazar día
+                if 'dd' in fmt:
+                    fmt = fmt.replace('dd', '%d')
+                else:
+                    fmt = fmt.replace('d', '%d')
+                
+                fmt = fmt.strip("'\"")
+                return fmt
+    except Exception as e:
+        print(f"Warning: could not get Windows short date format: {e}")
+
+    return default_format
+
+

@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 from datetime import datetime, timedelta
-from Programas.CleaningData import clean_csv_file
+from Programas.CleaningData import clean_csv_file, get_windows_date_format
 import random
 
 def _normalize_text(text):
@@ -67,7 +67,12 @@ class WorkloadBalancer:
         if pd.isna(sys_created_on):
             return None
         try:
-            dt = pd.to_datetime(str(sys_created_on).strip(), format='%d/%m/%Y %H:%M:%S', errors='coerce')
+            win_fmt = get_windows_date_format()
+            dt = pd.to_datetime(str(sys_created_on).strip(), format=f"{win_fmt} %H:%M:%S", errors='coerce')
+            if pd.isna(dt):
+                dt = pd.to_datetime(str(sys_created_on).strip(), format=win_fmt, errors='coerce')
+            if pd.isna(dt):
+                dt = pd.to_datetime(str(sys_created_on).strip(), format='%d/%m/%Y %H:%M:%S', errors='coerce')
             if pd.isna(dt):
                 dt = pd.to_datetime(str(sys_created_on).strip(), errors='coerce')
             if pd.isna(dt):
@@ -110,13 +115,16 @@ class WorkloadBalancer:
                     else:
                         shift_date = date_val
             
-            shift_date_str = shift_date.strftime('%d/%m/%Y')
             if 'Fecha' not in self.df_shifts.columns or shift_col not in self.df_shifts.columns:
                 return None
-            match_rows = self.df_shifts[self.df_shifts['Fecha'] == shift_date_str]
-            if match_rows.empty:
-                shift_date_str_alt = shift_date.strftime('%Y-%m-%d')
-                match_rows = self.df_shifts[self.df_shifts['Fecha'] == shift_date_str_alt]
+
+            # Parsear la columna 'Fecha' dinámicamente con el formato de Windows y fallbacks
+            parsed_fecha_col = pd.to_datetime(self.df_shifts['Fecha'], format=win_fmt, errors='coerce').dt.date
+            if parsed_fecha_col.isna().any():
+                fallback_parsed = pd.to_datetime(self.df_shifts['Fecha'], errors='coerce').dt.date
+                parsed_fecha_col = parsed_fecha_col.fillna(fallback_parsed)
+
+            match_rows = self.df_shifts[parsed_fecha_col == shift_date]
             if not match_rows.empty:
                 val = match_rows.iloc[0][shift_col]
                 if pd.notna(val) and str(val).strip() != '':
