@@ -209,7 +209,7 @@ def run_predictions(run_incidents=True, run_requirements=True):
 # ==========================================
 # GENERADOR DE PAYLOADS JAVASCRIPT DOM
 # ==========================================
-def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str="", app_sys_id=""):
+def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str="", app_sys_id="", step=1):
     """
     Construye la función ejecutable en JS para la consola DevTools de ServiceNow.
     """
@@ -268,98 +268,122 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str="", app
     else:
         # REQUERIMIENTOS
         due_clean = str(due_date_str).replace("'", "\\'")
-        js = f"""(function() {{
-            var sysId = '{sys_id_clean}';
-            var name = '{assignee_clean}';
-            var dueStr = '{due_clean}';
-            var appSysId = '{app_sys_id_clean}';
-            var appName = 'Bancs';
-            
-            /* 1. Asignado a */
-            if (typeof g_form !== 'undefined') {{
-                try {{
-                    if (sysId) {{ g_form.setValue('assigned_to', sysId, name); }}
-                    else {{ g_form.setValue('assigned_to', name); }}
-                }} catch(e) {{}}
-            }}
-            var hid = document.getElementById('sc_req_item.assigned_to');
-            if (hid) {{
-                if (sysId) {{ hid.value = sysId; }}
-                hid.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                if (typeof onChange === 'function') {{
-                    try {{ onChange('sc_req_item.assigned_to'); }} catch(e) {{}}
-                }}
-            }}
-            var disp = document.getElementById('sys_display.sc_req_item.assigned_to');
-            if (disp) {{
-                disp.value = name;
-                disp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                disp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                disp.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-            }}
-            var orig = document.getElementById('sys_display.original.sc_req_item.assigned_to');
-            if (orig) {{ orig.value = name; }}
-            
-            /* 2. Elemento de configuración (cmdb_ci -> Bancs) */
-            if (typeof g_form !== 'undefined') {{
-                try {{
-                    if (appSysId) {{ g_form.setValue('cmdb_ci', appSysId, appName); }}
-                    else {{ g_form.setValue('cmdb_ci', appName); }}
-                }} catch(e) {{}}
-            }}
-            var appDisp = document.getElementById('sys_display.sc_req_item.cmdb_ci');
-            if (appDisp) {{
-                appDisp.value = appName;
-                appDisp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                appDisp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                appDisp.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-            }}
-            var appOrig = document.getElementById('sys_display.original.sc_req_item.cmdb_ci');
-            if (appOrig) {{ appOrig.value = appName; }}
-            
-            /* 3. Estado -> En proceso ('2') */
-            if (typeof g_form !== 'undefined') {{
-                try {{ g_form.setValue('state', '2'); }} catch(e) {{}}
-            }}
-            var st = document.getElementById('sc_req_item.state');
-            if (st) {{
-                st.value = '2';
-                st.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                if (typeof onChange === 'function') {{
-                    try {{ onChange('sc_req_item.state'); }} catch(e) {{}}
-                }}
-            }}
-            
-            /* 4. Polling dinámico para esperar que se resuelva la CMDB y se active due_date */
-            var checkCount = 0;
-            var maxChecks = 30;
-            
-            function proceedIfReady() {{
-                var hiddenCi = document.getElementById('sc_req_item.cmdb_ci');
-                var dueField = document.getElementById('sc_req_item.due_date');
-                var ciReady = appSysId || (hiddenCi && hiddenCi.value !== '');
-                var dueReady = (dueField && (dueField.offsetWidth > 0 || dueField.offsetHeight > 0) && !dueField.disabled);
+        
+        if step == 1:
+            # PASO 1: Asignar Persona y Elemento de Configuración, luego guardar
+            js = f"""(function() {{
+                var sysId = '{sys_id_clean}';
+                var name = '{assignee_clean}';
+                var appSysId = '{app_sys_id_clean}';
+                var appName = 'Bancs';
                 
-                if ((ciReady && dueReady) || checkCount >= maxChecks) {{
-                    if (dueField && dueStr) {{
-                        if (typeof g_form !== 'undefined') {{
-                            try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
-                        }}
-                        dueField.value = dueStr;
-                        dueField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        dueField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        dueField.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-                    }}
-                    setTimeout(function() {{
-                        {submit_code}
-                    }}, 300);
-                }} else {{
-                    checkCount++;
-                    setTimeout(proceedIfReady, 100);
+                /* 1. Asignado a */
+                if (typeof g_form !== 'undefined') {{
+                    try {{
+                        if (sysId) {{ g_form.setValue('assigned_to', sysId, name); }}
+                        else {{ g_form.setValue('assigned_to', name); }}
+                    }} catch(e) {{}}
                 }}
-            }}
-            setTimeout(proceedIfReady, 100);
-        }})();"""
+                var hid = document.getElementById('sc_req_item.assigned_to');
+                if (hid) {{
+                    if (sysId) {{ hid.value = sysId; }}
+                    hid.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    if (typeof onChange === 'function') {{
+                        try {{ onChange('sc_req_item.assigned_to'); }} catch(e) {{}}
+                    }}
+                }}
+                var disp = document.getElementById('sys_display.sc_req_item.assigned_to');
+                if (disp) {{
+                    disp.value = name;
+                    disp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    disp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    disp.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                }}
+                var orig = document.getElementById('sys_display.original.sc_req_item.assigned_to');
+                if (orig) {{ orig.value = name; }}
+                
+                /* 2. Elemento de configuración (cmdb_ci -> Bancs) */
+                if (typeof g_form !== 'undefined') {{
+                    try {{
+                        if (appSysId) {{ g_form.setValue('cmdb_ci', appSysId, appName); }}
+                        else {{ g_form.setValue('cmdb_ci', appName); }}
+                    }} catch(e) {{}}
+                }}
+                var appDisp = document.getElementById('sys_display.sc_req_item.cmdb_ci');
+                if (appDisp) {{
+                    appDisp.value = appName;
+                    appDisp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    appDisp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    appDisp.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                }}
+                var appOrig = document.getElementById('sys_display.original.sc_req_item.cmdb_ci');
+                if (appOrig) {{ appOrig.value = appName; }}
+                
+                /* Esperar a que se resuelva la CMDB (si es necesario) y guardar */
+                var checkCount = 0;
+                var maxChecks = 30;
+                
+                function proceedIfReady() {{
+                    var hiddenCi = document.getElementById('sc_req_item.cmdb_ci');
+                    var ciReady = appSysId || (hiddenCi && hiddenCi.value !== '');
+                    
+                    if (ciReady || checkCount >= maxChecks) {{
+                        setTimeout(function() {{
+                            {submit_code}
+                        }}, 300);
+                    }} else {{
+                        checkCount++;
+                        setTimeout(proceedIfReady, 100);
+                    }}
+                }}
+                setTimeout(proceedIfReady, 100);
+            }})();"""
+        else:
+            # PASO 2: Cambiar Estado a 'En proceso' ('2'), esperar por due_date y guardar
+            js = f"""(function() {{
+                var dueStr = '{due_clean}';
+                
+                /* 1. Estado -> En proceso ('2') */
+                if (typeof g_form !== 'undefined') {{
+                    try {{ g_form.setValue('state', '2'); }} catch(e) {{}}
+                }}
+                var st = document.getElementById('sc_req_item.state');
+                if (st) {{
+                    st.value = '2';
+                    st.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    if (typeof onChange === 'function') {{
+                        try {{ onChange('sc_req_item.state'); }} catch(e) {{}}
+                    }}
+                }}
+                
+                /* 2. Polling dinámico para esperar que se reactive due_date */
+                var checkCount = 0;
+                var maxChecks = 30;
+                
+                function proceedIfReady() {{
+                    var dueField = document.getElementById('sc_req_item.due_date');
+                    var dueReady = (dueField && (dueField.offsetWidth > 0 || dueField.offsetHeight > 0) && !dueField.disabled);
+                    
+                    if (dueReady || checkCount >= maxChecks) {{
+                        if (dueField && dueStr) {{
+                            if (typeof g_form !== 'undefined') {{
+                                try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
+                            }}
+                            dueField.value = dueStr;
+                            dueField.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            dueField.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            dueField.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                        }}
+                        setTimeout(function() {{
+                            {submit_code}
+                        }}, 300);
+                    }} else {{
+                        checkCount++;
+                        setTimeout(proceedIfReady, 100);
+                    }}
+                }}
+                setTimeout(proceedIfReady, 100);
+            }})();"""
 
     # Retornar payload JS limpio filtrando comentarios // de línea única
     clean_lines = []
@@ -451,28 +475,74 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
                 due_date_dt = datetime.now() + timedelta(days=30)
                 due_date_str = due_date_dt.strftime('%d/%m/%Y %H:%M:%S')
                 
-        # Obtener el Sys ID de la aplicación si aplica (solo requerimientos)
-        app_sys_id = app_sys_ids.get("Bancs", "") if is_requirement else ""
-        
-        # Construir JavaScript payload
-        js_payload = build_js_payload(is_requirement, assignee, sys_id, due_date_str, app_sys_id)
-        
-        # 1. Abrir ticket en el navegador
-        ticket_url = f"{SERVICENOW_BASE_URL}/{table_name}.do?sysparm_query=number={ticket_id}"
-        webbrowser.open(ticket_url, new=2)
-        time.sleep(LOAD_TIME)
-        
-        # 2. Abrir consola DevTools (Ctrl+Shift+J)
-        pyautogui.hotkey('ctrl', 'shift', 'j')
-        time.sleep(1.0)
-        
-        # 3. Copiar script JS al portapapeles y pegar en la consola
-        pyperclip.copy(js_payload)
-        time.sleep(CLIPBOARD_TIME)
-        pyautogui.hotkey('ctrl', 'v')
-        time.sleep(CLIPBOARD_TIME)
-        pyautogui.press('enter')
-        time.sleep(1.5)
+        if not is_requirement:
+            # INCIDENTES (Un solo paso)
+            # Obtener el Sys ID de la aplicación si aplica (no aplica a incidentes)
+            app_sys_id = ""
+            
+            # Construir JavaScript payload
+            js_payload = build_js_payload(is_requirement, assignee, sys_id, due_date_str, app_sys_id)
+            
+            # 1. Abrir ticket en el navegador
+            ticket_url = f"{SERVICENOW_BASE_URL}/{table_name}.do?sysparm_query=number={ticket_id}"
+            webbrowser.open(ticket_url, new=2)
+            time.sleep(LOAD_TIME)
+            
+            # 2. Abrir consola DevTools (Ctrl+Shift+J)
+            pyautogui.hotkey('ctrl', 'shift', 'j')
+            time.sleep(1.0)
+            
+            # 3. Copiar script JS al portapapeles y pegar en la consola
+            pyperclip.copy(js_payload)
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            time.sleep(1.5)
+        else:
+            # REQUERIMIENTOS (Dos pasos)
+            app_sys_id = app_sys_ids.get("Bancs", "")
+            
+            # --- PASO 1: Asignado a y Elemento de configuración ---
+            print(f"  -> Ejecutando Paso 1/2 para {ticket_id} (Asignar a: {assignee}, CI: Bancs)...")
+            js_payload_1 = build_js_payload(is_requirement, assignee, sys_id, due_date_str, app_sys_id, step=1)
+            
+            ticket_url = f"{SERVICENOW_BASE_URL}/{table_name}.do?sysparm_query=number={ticket_id}"
+            webbrowser.open(ticket_url, new=2)
+            time.sleep(LOAD_TIME)
+            
+            pyautogui.hotkey('ctrl', 'shift', 'j')
+            time.sleep(1.0)
+            pyperclip.copy(js_payload_1)
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            # Esperar a que se guarde el ticket en ServiceNow (y la página se recargue/actualice)
+            time.sleep(5.0)
+            # Cerrar la pestaña actual para limpiar el estado del navegador/devtools
+            pyautogui.hotkey('ctrl', 'w')
+            time.sleep(1.0)
+            
+            # --- PASO 2: Estado y Fecha de vencimiento ---
+            print(f"  -> Ejecutando Paso 2/2 para {ticket_id} (Estado: En proceso, Fecha: {due_date_str})...")
+            js_payload_2 = build_js_payload(is_requirement, assignee, sys_id, due_date_str, app_sys_id, step=2)
+            
+            webbrowser.open(ticket_url, new=2)
+            time.sleep(LOAD_TIME)
+            
+            pyautogui.hotkey('ctrl', 'shift', 'j')
+            time.sleep(1.0)
+            pyperclip.copy(js_payload_2)
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            # Esperar a que se guarde el ticket en ServiceNow
+            time.sleep(5.0)
+            # Cerrar la pestaña actual
+            pyautogui.hotkey('ctrl', 'w')
+            time.sleep(1.0)
         
     print("\nServiceNow DevTools DOM update loop finished!")
 
