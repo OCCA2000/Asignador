@@ -311,21 +311,21 @@ def build_js_payloads(is_requirement, assignee_name, sys_id, due_date_str="", ap
             var orig = document.getElementById('sys_display.original.sc_req_item.assigned_to');
             if (orig) {{ orig.value = name; }}
             
-            /* 2. Elemento de configuración (cmdb_ci -> Bancs) */
+            /* 2. Elemento de configuración (configuration_item -> Bancs) */
             if (typeof g_form !== 'undefined') {{
                 try {{
-                    if (appSysId) {{ g_form.setValue('cmdb_ci', appSysId, appName); }}
-                    else {{ g_form.setValue('cmdb_ci', appName); }}
+                    if (appSysId) {{ g_form.setValue('configuration_item', appSysId, appName); }}
+                    else {{ g_form.setValue('configuration_item', appName); }}
                 }} catch(e) {{}}
             }}
-            var appDisp = document.getElementById('sys_display.sc_req_item.cmdb_ci');
+            var appDisp = document.getElementById('sys_display.sc_req_item.configuration_item');
             if (appDisp) {{
                 appDisp.value = appName;
                 appDisp.dispatchEvent(new Event('input', {{ bubbles: true }}));
                 appDisp.dispatchEvent(new Event('change', {{ bubbles: true }}));
                 appDisp.dispatchEvent(new Event('blur', {{ bubbles: true }}));
             }}
-            var appOrig = document.getElementById('sys_display.original.sc_req_item.cmdb_ci');
+            var appOrig = document.getElementById('sys_display.original.sc_req_item.configuration_item');
             if (appOrig) {{ appOrig.value = appName; }}
             
             /* 3. Estado -> En proceso ('2') */
@@ -348,9 +348,9 @@ def build_js_payloads(is_requirement, assignee_name, sys_id, due_date_str="", ap
             var dueStr = '{due_clean}';
             if (dueStr) {{
                 if (typeof g_form !== 'undefined') {{
-                    try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
+                    try {{ g_form.setValue('u_fecha_prevista_de_finalizaci_n', dueStr); }} catch(e) {{}}
                 }}
-                var due = document.getElementById('sc_req_item.due_date');
+                var due = document.getElementById('sc_req_item.u_fecha_prevista_de_finalizaci_n');
                 if (due) {{
                     due.value = dueStr;
                     due.dispatchEvent(new Event('input', {{ bubbles: true }}));
