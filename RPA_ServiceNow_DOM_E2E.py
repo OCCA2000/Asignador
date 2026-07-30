@@ -211,6 +211,13 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             var sysId = '{sys_id_clean}';
             var name = '{assignee_clean}';
             
+            if (typeof g_form !== 'undefined') {{
+                try {{
+                    if (sysId) {{ g_form.setValue('assigned_to', sysId, name); }}
+                    else {{ g_form.setValue('assigned_to', name); }}
+                }} catch(e) {{}}
+            }}
+            
             /* 1. Campo de ID oculto (incident.assigned_to) */
             var hid = document.getElementById('incident.assigned_to');
             if (hid) {{
@@ -244,8 +251,16 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
         js = f"""(function() {{
             var sysId = '{sys_id_clean}';
             var name = '{assignee_clean}';
+            var dueStr = '{due_clean}';
+            var appName = 'Bancs';
             
-            /* 1. Asignado a (Hidden ID, Display name, Original) */
+            /* 1. Asignado a */
+            if (typeof g_form !== 'undefined') {{
+                try {{
+                    if (sysId) {{ g_form.setValue('assigned_to', sysId, name); }}
+                    else {{ g_form.setValue('assigned_to', name); }}
+                }} catch(e) {{}}
+            }}
             var hid = document.getElementById('sc_req_item.assigned_to');
             if (hid) {{
                 if (sysId) {{ hid.value = sysId; }}
@@ -264,28 +279,52 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             var orig = document.getElementById('sys_display.original.sc_req_item.assigned_to');
             if (orig) {{ orig.value = name; }}
             
-            /* 2. Estado -> En proceso ('2') */
+            /* 2. Elemento de configuración (cmdb_ci -> Bancs) */
+            if (typeof g_form !== 'undefined') {{
+                try {{ g_form.setValue('cmdb_ci', appName); }} catch(e) {{}}
+            }}
+            var appDisp = document.getElementById('sys_display.sc_req_item.cmdb_ci');
+            if (appDisp) {{
+                appDisp.value = appName;
+                appDisp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                appDisp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                appDisp.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+            }}
+            var appOrig = document.getElementById('sys_display.original.sc_req_item.cmdb_ci');
+            if (appOrig) {{ appOrig.value = appName; }}
+            
+            /* 3. Estado -> En proceso ('2') */
+            if (typeof g_form !== 'undefined') {{
+                try {{ g_form.setValue('state', '2'); }} catch(e) {{}}
+            }}
             var st = document.getElementById('sc_req_item.state');
             if (st) {{
                 st.value = '2';
                 st.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                if (typeof onChange === 'function') {{
+                    try {{ onChange('sc_req_item.state'); }} catch(e) {{}}
+                }}
             }}
             
-            /* 3. Fecha de vencimiento */
-            var due = document.getElementById('sc_req_item.due_date');
-            if (due && '{due_clean}') {{
-                due.value = '{due_clean}';
-                due.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            }}
-            
-            /* 4. Aplicación -> Bancs */
-            var appDisp = document.getElementById('sys_display.sc_req_item.cmdb_ci');
-            if (appDisp) {{
-                appDisp.value = 'Bancs';
-                appDisp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            }}
-            
-            {submit_code}
+            /* 4. Esperar a que la UI Policy reactive el campo due_date y asignarlo */
+            setTimeout(function() {{
+                if (dueStr) {{
+                    if (typeof g_form !== 'undefined') {{
+                        try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
+                    }}
+                    var due = document.getElementById('sc_req_item.due_date');
+                    if (due) {{
+                        due.value = dueStr;
+                        due.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        due.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        due.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                    }}
+                }}
+                
+                setTimeout(function() {{
+                    {submit_code}
+                }}, 250);
+            }}, 450);
         }})();"""
 
     # Retornar payload JS limpio filtrando comentarios // de línea única
