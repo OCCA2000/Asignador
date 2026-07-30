@@ -138,31 +138,33 @@ def find_latest_output_file(pattern, min_mtime=None):
 # ==========================================
 # EJECUTORES DE PREDICCIÓN Y DESCARGA
 # ==========================================
-def run_downloads():
+def run_downloads(download_incidents=True, download_requirements=True):
     """Maneja la descarga de tickets desde ServiceNow."""
     print("\n" + "="*50)
     print("              1. FASE DE DESCARGA DE CSV")
     print("="*50)
     
-    incident_url = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
-    print(f"Abriendo lista de incidentes: {incident_url}")
-    webbrowser.open(incident_url)
-    print("Se abrió una ventana del navegador.")
-    input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
-    
-    if not move_latest_download("*incident*.csv", "incident.csv"):
-        print("Advertencia: Asegúrese de que exista Entrada/incident.csv.")
+    if download_incidents:
+        incident_url = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
+        print(f"Abriendo lista de incidentes: {incident_url}")
+        webbrowser.open(incident_url)
+        print("Se abrió una ventana del navegador.")
+        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
         
-    req_url = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
-    print(f"\nAbriendo lista de requerimientos: {req_url}")
-    webbrowser.open(req_url)
-    print("Se abrió una ventana del navegador.")
-    input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
-    
-    if not move_latest_download("*sc_req_item*.csv", "sc_req_item.csv"):
-        print("Advertencia: Asegúrese de que exista Entrada/sc_req_item.csv.")
+        if not move_latest_download("*incident*.csv", "incident.csv"):
+            print("Advertencia: Asegúrese de que exista Entrada/incident.csv.")
+            
+    if download_requirements:
+        req_url = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
+        print(f"\nAbriendo lista de requerimientos: {req_url}")
+        webbrowser.open(req_url)
+        print("Se abrió una ventana del navegador.")
+        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+        
+        if not move_latest_download("*sc_req_item*.csv", "sc_req_item.csv"):
+            print("Advertencia: Asegúrese de que exista Entrada/sc_req_item.csv.")
 
-def run_predictions():
+def run_predictions(run_incidents=True, run_requirements=True):
     """Ejecuta los scripts de predicción de aprendizaje automático."""
     print("\n" + "="*50)
     print("              2. FASE DE MODELOS DE PREDICCIÓN")
@@ -173,19 +175,21 @@ def run_predictions():
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    print("Running Assigner_Incidents.py...")
-    try:
-        subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], check=True, cwd=script_dir)
-        print("Incident predictions complete!")
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing Assigner_Incidents.py: {e}")
-        
-    print("\nRunning Assigner_Requirements.py...")
-    try:
-        subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], check=True, cwd=script_dir)
-        print("Requirement predictions complete!")
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing Assigner_Requirements.py: {e}")
+    if run_incidents:
+        print("Running Assigner_Incidents.py...")
+        try:
+            subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], check=True, cwd=script_dir)
+            print("Incident predictions complete!")
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing Assigner_Incidents.py: {e}")
+            
+    if run_requirements:
+        print("\nRunning Assigner_Requirements.py...")
+        try:
+            subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], check=True, cwd=script_dir)
+            print("Requirement predictions complete!")
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing Assigner_Requirements.py: {e}")
 
 # ==========================================
 # GENERADOR DE PAYLOADS JAVASCRIPT DOM
@@ -477,39 +481,42 @@ def main():
     choice = input("\nSeleccione una opción (1-6): ").strip()
     
     if choice == '1':
-        SKIP_DOWNLOAD = True
-        run_predictions()
+        if not SKIP_DOWNLOAD:
+            run_downloads(download_incidents=True, download_requirements=False)
+        else:
+            print("\nOmitiendo fase de descarga (SKIP_DOWNLOAD=True). Usando CSVs locales en Entrada/.")
+        run_predictions(run_incidents=True, run_requirements=False)
         inc_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
         if inc_csv:
             update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
         else:
             print("No se encontró archivo de salida de predicción para Incidentes.")
     elif choice == '2':
-        SKIP_DOWNLOAD = True
-        print("\n--- Procesando únicamente Incidentes ---")
+        print("\n--- Procesando únicamente Incidentes (Solo DOM) ---")
         inc_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
         if inc_csv:
             update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
         else:
             print("No se encontró archivo de salida de predicción para Incidentes.")
     elif choice == '3':
-        SKIP_DOWNLOAD = True
-        run_predictions()
+        if not SKIP_DOWNLOAD:
+            run_downloads(download_incidents=False, download_requirements=True)
+        else:
+            print("\nOmitiendo fase de descarga (SKIP_DOWNLOAD=True). Usando CSVs locales en Entrada/.")
+        run_predictions(run_incidents=False, run_requirements=True)
         req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
         if req_csv:
             update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
         else:
             print("No se encontró archivo de salida de predicción para Requerimientos.")
     elif choice == '4':
-        SKIP_DOWNLOAD = True
-        print("\n--- Procesando únicamente Requerimientos ---")
+        print("\n--- Procesando únicamente Requerimientos (Solo DOM) ---")
         req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
         if req_csv:
             update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
         else:
             print("No se encontró archivo de salida de predicción para Requerimientos.")
     elif choice == '5':
-        SKIP_DOWNLOAD = False
         run_rpa_loop()
     elif choice == '6':
         print("Saliendo...")
