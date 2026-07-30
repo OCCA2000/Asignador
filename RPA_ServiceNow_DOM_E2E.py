@@ -211,7 +211,7 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             var sysId = '{sys_id_clean}';
             var name = '{assignee_clean}';
             
-            // 1. Campo de ID oculto (incident.assigned_to)
+            /* 1. Campo de ID oculto (incident.assigned_to) */
             var hid = document.getElementById('incident.assigned_to');
             if (hid) {{
                 if (sysId) {{ hid.value = sysId; }}
@@ -221,7 +221,7 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
                 }}
             }}
             
-            // 2. Campo de texto visible (sys_display.incident.assigned_to)
+            /* 2. Campo de texto visible (sys_display.incident.assigned_to) */
             var disp = document.getElementById('sys_display.incident.assigned_to');
             if (disp) {{
                 disp.value = name;
@@ -230,7 +230,7 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
                 disp.dispatchEvent(new Event('blur', {{ bubbles: true }}));
             }}
             
-            // 3. Campo de texto original (sys_display.original.incident.assigned_to)
+            /* 3. Campo de texto original (sys_display.original.incident.assigned_to) */
             var orig = document.getElementById('sys_display.original.incident.assigned_to');
             if (orig) {{
                 orig.value = name;
@@ -245,7 +245,7 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             var sysId = '{sys_id_clean}';
             var name = '{assignee_clean}';
             
-            // 1. Asignado a (Hidden ID, Display name, Original)
+            /* 1. Asignado a (Hidden ID, Display name, Original) */
             var hid = document.getElementById('sc_req_item.assigned_to');
             if (hid) {{
                 if (sysId) {{ hid.value = sysId; }}
@@ -264,21 +264,21 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             var orig = document.getElementById('sys_display.original.sc_req_item.assigned_to');
             if (orig) {{ orig.value = name; }}
             
-            // 2. Estado -> En proceso ('2')
+            /* 2. Estado -> En proceso ('2') */
             var st = document.getElementById('sc_req_item.state');
             if (st) {{
                 st.value = '2';
                 st.dispatchEvent(new Event('change', {{ bubbles: true }}));
             }}
             
-            // 3. Fecha de vencimiento
+            /* 3. Fecha de vencimiento */
             var due = document.getElementById('sc_req_item.due_date');
             if (due && '{due_clean}') {{
                 due.value = '{due_clean}';
                 due.dispatchEvent(new Event('change', {{ bubbles: true }}));
             }}
             
-            // 4. Aplicación -> Bancs
+            /* 4. Aplicación -> Bancs */
             var appDisp = document.getElementById('sys_display.sc_req_item.cmdb_ci');
             if (appDisp) {{
                 appDisp.value = 'Bancs';
@@ -288,8 +288,14 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             {submit_code}
         }})();"""
 
-    # Retornar payload JS limpio en una sola línea para evitar saltos de línea al pegar en consola
-    return " ".join(js.split())
+    # Retornar payload JS limpio filtrando comentarios // de línea única
+    clean_lines = []
+    for line in js.splitlines():
+        line_clean = line.split("//")[0].strip()
+        if line_clean:
+            clean_lines.append(line_clean)
+            
+    return " ".join(clean_lines)
 
 # ==========================================
 # ACTUALIZACIÓN DE TICKETS VÍA DEVTOOLS CONSOLE
