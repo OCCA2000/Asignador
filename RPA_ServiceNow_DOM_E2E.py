@@ -85,6 +85,21 @@ def load_user_id_map():
     print(f"Cargados {len(user_map)} mapeos de ServiceNow ID desde {USUARIOS_CONFIG_FILE}.")
     return user_map
 
+def load_config_parameters():
+    """
+    Carga el archivo rpa_config_parameters.json y devuelve un diccionario
+    con configuraciones generales de ServiceNow (por ejemplo, Sys IDs de CIs).
+    """
+    config_file = os.path.join(ESPECIFICACIONES_DIR, "rpa_config_parameters.json")
+    if not os.path.exists(config_file):
+        return {}
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[ERROR] No se pudo leer '{config_file}': {e}")
+        return {}
+
 # ==========================================
 # UTILIDADES DE ARCHIVOS
 # ==========================================
@@ -194,7 +209,7 @@ def run_predictions(run_incidents=True, run_requirements=True):
 # ==========================================
 # GENERADOR DE PAYLOADS JAVASCRIPT DOM
 # ==========================================
-def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
+def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str="", app_sys_id=""):
     """
     Construye la función ejecutable en JS para la consola DevTools de ServiceNow.
     """
@@ -208,6 +223,7 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
 
     assignee_clean = str(assignee_name).replace("'", "\\'")
     sys_id_clean = str(sys_id).replace("'", "\\'") if sys_id else ""
+    app_sys_id_clean = str(app_sys_id).replace("'", "\\'") if app_sys_id else ""
 
     if not is_requirement:
         # INCIDENTES
@@ -256,6 +272,7 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             var sysId = '{sys_id_clean}';
             var name = '{assignee_clean}';
             var dueStr = '{due_clean}';
+            var appSysId = '{app_sys_id_clean}';
             var appName = 'Bancs';
             
             /* 1. Asignado a */
@@ -285,7 +302,10 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
             
             /* 2. Elemento de configuración (cmdb_ci -> Bancs) */
             if (typeof g_form !== 'undefined') {{
-                try {{ g_form.setValue('cmdb_ci', appName); }} catch(e) {{}}
+                try {{
+                    if (appSysId) {{ g_form.setValue('cmdb_ci', appSysId, appName); }}
+                    else {{ g_form.setValue('cmdb_ci', appName); }}
+                }} catch(e) {{}}
             }}
             var appDisp = document.getElementById('sys_display.sc_req_item.cmdb_ci');
             if (appDisp) {{
@@ -310,25 +330,35 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str=""):
                 }}
             }}
             
-            /* 4. Esperar a que la UI Policy reactive el campo due_date y asignarlo */
-            setTimeout(function() {{
-                if (dueStr) {{
-                    if (typeof g_form !== 'undefined') {{
-                        try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
-                    }}
-                    var due = document.getElementById('sc_req_item.due_date');
-                    if (due) {{
-                        due.value = dueStr;
-                        due.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        due.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        due.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-                    }}
-                }}
+            /* 4. Polling dinámico para esperar que se resuelva la CMDB y se active due_date */
+            var checkCount = 0;
+            var maxChecks = 30;
+            
+            function proceedIfReady() {{
+                var hiddenCi = document.getElementById('sc_req_item.cmdb_ci');
+                var dueField = document.getElementById('sc_req_item.due_date');
+                var ciReady = appSysId || (hiddenCi && hiddenCi.value !== '');
+                var dueReady = (dueField && (dueField.offsetWidth > 0 || dueField.offsetHeight > 0) && !dueField.disabled);
                 
-                setTimeout(function() {{
-                    {submit_code}
-                }}, 250);
-            }}, 450);
+                if ((ciReady && dueReady) || checkCount >= maxChecks) {{
+                    if (dueField && dueStr) {{
+                        if (typeof g_form !== 'undefined') {{
+                            try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
+                        }}
+                        dueField.value = dueStr;
+                        dueField.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        dueField.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        dueField.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                    }}
+                    setTimeout(function() {{
+                        {submit_code}
+                    }}, 300);
+                }} else {{
+                    checkCount++;
+                    setTimeout(proceedIfReady, 100);
+                }}
+            }}
+            setTimeout(proceedIfReady, 100);
         }})();"""
 
     # Retornar payload JS limpio filtrando comentarios // de línea única
@@ -353,6 +383,8 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
         return
         
     user_map = load_user_id_map()
+    config_params = load_config_parameters()
+    app_sys_ids = config_params.get("configuration_items", {})
     
     print(f"\nProcessing assignments DOM-mode from: {csv_path}")
     df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
@@ -419,8 +451,11 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
                 due_date_dt = datetime.now() + timedelta(days=30)
                 due_date_str = due_date_dt.strftime('%d/%m/%Y %H:%M:%S')
                 
+        # Obtener el Sys ID de la aplicación si aplica (solo requerimientos)
+        app_sys_id = app_sys_ids.get("Bancs", "") if is_requirement else ""
+        
         # Construir JavaScript payload
-        js_payload = build_js_payload(is_requirement, assignee, sys_id, due_date_str)
+        js_payload = build_js_payload(is_requirement, assignee, sys_id, due_date_str, app_sys_id)
         
         # 1. Abrir ticket en el navegador
         ticket_url = f"{SERVICENOW_BASE_URL}/{table_name}.do?sysparm_query=number={ticket_id}"
