@@ -209,9 +209,18 @@ def run_predictions(run_incidents=True, run_requirements=True):
 # ==========================================
 # GENERADOR DE PAYLOADS JAVASCRIPT DOM
 # ==========================================
-def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str="", app_sys_id=""):
+def clean_js(js_code):
+    clean_lines = []
+    for line in js_code.splitlines():
+        line_clean = line.split("//")[0].strip()
+        if line_clean:
+            clean_lines.append(line_clean)
+    return " ".join(clean_lines)
+
+def build_js_payloads(is_requirement, assignee_name, sys_id, due_date_str="", app_sys_id=""):
     """
-    Construye la función ejecutable en JS para la consola DevTools de ServiceNow.
+    Construye las funciones ejecutables en JS para la consola DevTools de ServiceNow.
+    Retorna una tupla (js_payload_1, js_payload_2). Para incidentes, js_payload_2 es None.
     """
     submit_code = """
         if (typeof gsftSubmit !== 'undefined') {
@@ -265,13 +274,15 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str="", app
             
             {submit_code}
         }})();"""
+        return clean_js(js), None
     else:
         # REQUERIMIENTOS
         due_clean = str(due_date_str).replace("'", "\\'")
-        js = f"""(function() {{
+        
+        # Payload 1: Asignación de Persona, Aplicación y Estado a "En proceso"
+        js_1 = f"""(function() {{
             var sysId = '{sys_id_clean}';
             var name = '{assignee_clean}';
-            var dueStr = '{due_clean}';
             var appSysId = '{app_sys_id_clean}';
             var appName = 'Bancs';
             
@@ -329,46 +340,30 @@ def build_js_payload(is_requirement, assignee_name, sys_id, due_date_str="", app
                     try {{ onChange('sc_req_item.state'); }} catch(e) {{}}
                 }}
             }}
-            
-            /* 4. Polling dinámico para esperar que se resuelva la CMDB y se active due_date */
-            var checkCount = 0;
-            var maxChecks = 30;
-            
-            function proceedIfReady() {{
-                var hiddenCi = document.getElementById('sc_req_item.cmdb_ci');
-                var dueField = document.getElementById('sc_req_item.due_date');
-                var ciReady = appSysId || (hiddenCi && hiddenCi.value !== '');
-                var dueReady = (dueField && (dueField.offsetWidth > 0 || dueField.offsetHeight > 0) && !dueField.disabled);
-                
-                if ((ciReady && dueReady) || checkCount >= maxChecks) {{
-                    if (dueField && dueStr) {{
-                        if (typeof g_form !== 'undefined') {{
-                            try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
-                        }}
-                        dueField.value = dueStr;
-                        dueField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        dueField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        dueField.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-                    }}
-                    setTimeout(function() {{
-                        {submit_code}
-                    }}, 300);
-                }} else {{
-                    checkCount++;
-                    setTimeout(proceedIfReady, 100);
-                }}
-            }}
-            setTimeout(proceedIfReady, 100);
+            console.log('Payload 1 ejecutado.');
         }})();"""
 
-    # Retornar payload JS limpio filtrando comentarios // de línea única
-    clean_lines = []
-    for line in js.splitlines():
-        line_clean = line.split("//")[0].strip()
-        if line_clean:
-            clean_lines.append(line_clean)
-            
-    return " ".join(clean_lines)
+        # Payload 2: Actualización de Fecha y Guardar
+        js_2 = f"""(function() {{
+            var dueStr = '{due_clean}';
+            if (dueStr) {{
+                if (typeof g_form !== 'undefined') {{
+                    try {{ g_form.setValue('due_date', dueStr); }} catch(e) {{}}
+                }}
+                var due = document.getElementById('sc_req_item.due_date');
+                if (due) {{
+                    due.value = dueStr;
+                    due.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    due.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    due.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                }}
+            }}
+            setTimeout(function() {{
+                {submit_code}
+            }}, 500);
+        }})();"""
+        
+        return clean_js(js_1), clean_js(js_2)
 
 # ==========================================
 # ACTUALIZACIÓN DE TICKETS VÍA DEVTOOLS CONSOLE
@@ -454,8 +449,8 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
         # Obtener el Sys ID de la aplicación si aplica (solo requerimientos)
         app_sys_id = app_sys_ids.get("Bancs", "") if is_requirement else ""
         
-        # Construir JavaScript payload
-        js_payload = build_js_payload(is_requirement, assignee, sys_id, due_date_str, app_sys_id)
+        # Construir JavaScript payloads
+        js_payload_1, js_payload_2 = build_js_payloads(is_requirement, assignee, sys_id, due_date_str, app_sys_id)
         
         # 1. Abrir ticket en el navegador
         ticket_url = f"{SERVICENOW_BASE_URL}/{table_name}.do?sysparm_query=number={ticket_id}"
@@ -466,12 +461,23 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
         pyautogui.hotkey('ctrl', 'shift', 'j')
         time.sleep(1.0)
         
-        # 3. Copiar script JS al portapapeles y pegar en la consola
-        pyperclip.copy(js_payload)
+        # 3. Copiar script JS 1 al portapapeles y pegar en la consola
+        pyperclip.copy(js_payload_1)
         time.sleep(CLIPBOARD_TIME)
         pyautogui.hotkey('ctrl', 'v')
         time.sleep(CLIPBOARD_TIME)
         pyautogui.press('enter')
+        
+        # 4. Si hay un segundo script (requerimientos), esperar 5 segundos y ejecutar
+        if js_payload_2:
+            print("Esperando 5 segundos para que cargue el campo de fecha y se resuelva la CMDB...")
+            time.sleep(5.0)
+            pyperclip.copy(js_payload_2)
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            
         time.sleep(1.5)
         
     print("\nServiceNow DevTools DOM update loop finished!")
