@@ -127,6 +127,10 @@ class WorkloadBalancer:
             match_rows = self.df_shifts[parsed_fecha_col == shift_date]
             if not match_rows.empty:
                 val = match_rows.iloc[0][shift_col]
+                # If calculated shift is empty, fallback to Stand-by (e.g., on holidays)
+                if (pd.isna(val) or str(val).strip() == '') and 'Stand-by' in match_rows.columns:
+                    val = match_rows.iloc[0]['Stand-by']
+                
                 if pd.notna(val) and str(val).strip() != '':
                     username = str(val).strip().upper()
                     return self._canonical_assignee(username)
