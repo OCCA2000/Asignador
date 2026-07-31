@@ -35,6 +35,9 @@ SKIP_DOWNLOAD = True
 # Modo seguro Dry Run: navegará e inyectará campos pero NO guardará el ticket si es True
 DRY_RUN = True
 
+# Tiempo de espera en segundos para que se completen las descargas cuando DRY_RUN = False
+DOWNLOAD_WAIT_TIME = 5.0
+
 # Ajustes de PyAutoGUI
 pyautogui.FAILSAFE = True  # Mover cursor a la esquina superior izquierda para abortar ejecución
 pyautogui.PAUSE = 0.8      # Pausa después de cada acción de GUI (en segundos)
@@ -164,7 +167,11 @@ def run_downloads(download_incidents=True, download_requirements=True):
         print(f"Abriendo lista de incidentes: {incident_url}")
         webbrowser.open(incident_url)
         print("Se abrió una ventana del navegador.")
-        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+        if DRY_RUN:
+            input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+        else:
+            print(f"Esperando {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
+            time.sleep(DOWNLOAD_WAIT_TIME)
         
         if not move_latest_download("*incident*.csv", "incident.csv"):
             print("Advertencia: Asegúrese de que exista Entrada/incident.csv.")
@@ -174,7 +181,11 @@ def run_downloads(download_incidents=True, download_requirements=True):
         print(f"\nAbriendo lista de requerimientos: {req_url}")
         webbrowser.open(req_url)
         print("Se abrió una ventana del navegador.")
-        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+        if DRY_RUN:
+            input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+        else:
+            print(f"Esperando {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
+            time.sleep(DOWNLOAD_WAIT_TIME)
         
         if not move_latest_download("*sc_req_item*.csv", "sc_req_item.csv"):
             print("Advertencia: Asegúrese de que exista Entrada/sc_req_item.csv.")

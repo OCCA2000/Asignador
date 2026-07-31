@@ -33,6 +33,9 @@ SKIP_DOWNLOAD = True
 # Modo seguro Dry Run: navegará y llenará campos pero NO hará clic en "Actualizar/Guardar"
 DRY_RUN = True
 
+# Tiempo de espera en segundos para que se completen las descargas cuando DRY_RUN = False
+DOWNLOAD_WAIT_TIME = 5.0
+
 # Ajustes de PyAutoGUI
 pyautogui.FAILSAFE = True  # Mover cursor a la esquina superior izquierda para abortar ejecución
 pyautogui.PAUSE = 1.0      # Pausa después de cada acción de GUI (en segundos)
@@ -242,7 +245,11 @@ def run_downloads():
     webbrowser.open(incident_url)
     print("Se abrió una ventana del navegador.")
     print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
-    input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+    if DRY_RUN:
+        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+    else:
+        print(f"Esperando {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
+        time.sleep(DOWNLOAD_WAIT_TIME)
     
     # Mover descarga
     if not move_latest_download("*incident*.csv", "incident.csv"):
@@ -254,7 +261,11 @@ def run_downloads():
     webbrowser.open(req_url)
     print("Se abrió una ventana del navegador.")
     print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
-    input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+    if DRY_RUN:
+        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+    else:
+        print(f"Esperando {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
+        time.sleep(DOWNLOAD_WAIT_TIME)
     
     if not move_latest_download("*sc_req_item*.csv", "sc_req_item.csv"):
         print("Advertencia: No se pudo encontrar/mover automáticamente el CSV de requerimientos. Asegúrese de que exista Entrada/sc_req_item.csv.")
