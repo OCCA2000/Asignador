@@ -549,9 +549,10 @@ def main():
     print("3. Solo REQUERIMIENTOS: Ejecutar Predicciones y Actualizar DOM")
     print("4. Solo REQUERIMIENTOS: Solo Actualizar DOM (usando última predicción)")
     print("5. Ejecución Completa (Incidentes + Requerimientos)")
-    print("6. Salir")
+    print("6. Ejecución Completa Periódica (Incidentes + Requerimientos)")
+    print("7. Salir")
     
-    choice = input("\nSeleccione una opción (1-6): ").strip()
+    choice = input("\nSeleccione una opción (1-7): ").strip()
     
     if choice == '1':
         if not SKIP_DOWNLOAD:
@@ -592,6 +593,52 @@ def main():
     elif choice == '5':
         run_rpa_loop()
     elif choice == '6':
+        print("\n" + "="*50)
+        print("   EJECUCIÓN COMPLETA PERIÓDICA (INCIDENTES + REQUERIMIENTOS)")
+        print("="*50)
+        
+        interval_str = input("Ingrese el intervalo de espera en minutos [por defecto 30]: ").strip()
+        try:
+            interval_mins = float(interval_str) if interval_str else 30.0
+        except ValueError:
+            print("Número inválido. Usando 30.0 minutos por defecto.")
+            interval_mins = 30.0
+            
+        interval_secs = int(interval_mins * 60)
+        
+        print("\n" + "="*50)
+        print(f"Modo Periódico activado! Intervalo: {interval_mins} min ({interval_secs}s)")
+        print(f"Configuración actual: SKIP_DOWNLOAD={SKIP_DOWNLOAD}, DRY_RUN={DRY_RUN}")
+        print("Presione Ctrl+C en esta terminal para detener la automatización.")
+        print("="*50 + "\n")
+        
+        while True:
+            cycle_start = time.time()
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n[{current_time}] Iniciando ciclo de automatización...")
+            
+            try:
+                run_rpa_loop(min_mtime=cycle_start)
+                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Ciclo finalizado exitosamente.")
+            except KeyboardInterrupt:
+                print("\nAutomatización detenida por el usuario (Ctrl+C). Saliendo del ciclo.")
+                break
+            except Exception as e:
+                print(f"\n[ERROR] Ocurrió una excepción en el ciclo: {e}")
+                print("Reintentando en el siguiente ciclo...")
+                
+            next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
+            print(f"Esperando {interval_mins} minutos. Siguiente ejecución a las {next_run_time}...")
+            
+            sleep_left = interval_secs
+            try:
+                while sleep_left > 0:
+                    time.sleep(min(5, sleep_left))
+                    sleep_left -= 5
+            except KeyboardInterrupt:
+                print("\nAutomatización detenida por el usuario (Ctrl+C). Saliendo del ciclo.")
+                break
+    elif choice == '7':
         print("Saliendo...")
         sys.exit(0)
     else:

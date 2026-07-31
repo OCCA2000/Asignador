@@ -36,6 +36,9 @@ DRY_RUN = True
 # Tiempo de espera en segundos para que se completen las descargas cuando DRY_RUN = False
 DOWNLOAD_WAIT_TIME = 5.0
 
+# Execution interval in minutes for the periodic run option (Option 6)
+PERIODIC_INTERVAL_MINUTES = 30.0
+
 # Ajustes de PyAutoGUI
 pyautogui.FAILSAFE = True  # Mover cursor a la esquina superior izquierda para abortar ejecución
 pyautogui.PAUSE = 1.0      # Pausa después de cada acción de GUI (en segundos)
@@ -625,9 +628,10 @@ def main():
     print("3. [Run Updates Only] Skip models, just update ServiceNow using latest Salida/ CSVs.")
     print("4. [Setup Mode] Calibrate monitor coordinates for input box and update button.")
     print("5. [Daemon Mode] Run automation continuously at a set interval (daemon loop).")
-    print("6. Exit")
+    print("6. [Periodic Mode] Run E2E pipeline periodically (both Incidents & Requirements).")
+    print("7. Exit")
     
-    choice = input("\nSelect an option (1-6): ").strip()
+    choice = input("\nSelect an option (1-7): ").strip()
     
     global SKIP_DOWNLOAD, DRY_RUN
     
@@ -663,6 +667,73 @@ def main():
         run_daemon_mode()
         
     elif choice == '6':
+        print("\n" + "="*50)
+        print("   RUN PIPELINE PERIODICALLY (INCIDENTS & REQUIREMENTS)")
+        print("="*50)
+        
+        mode_choice = input("Select base run mode:\n1. [Full E2E Pipeline] Run downloads, models, and update ServiceNow.\n2. [Run Models & Update] Skip downloads, run models on local Entrada/, and update.\n3. [Run Updates Only] Skip models, just update ServiceNow using latest Salida/ CSVs.\nSelect mode (1-3) [default 1]: ").strip()
+        if not mode_choice:
+            mode_choice = '1'
+            
+        dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [Y/n]: ").strip().lower()
+        run_dry_run = dry_choice != 'n'
+        
+        interval_secs = int(PERIODIC_INTERVAL_MINUTES * 60)
+        
+        print("\n" + "="*50)
+        print(f"Periodic Mode activated! Interval: {PERIODIC_INTERVAL_MINUTES} mins ({interval_secs}s)")
+        print(f"Base Mode: {mode_choice} | Dry Run: {run_dry_run}")
+        print("Press Ctrl+C in this terminal to stop the execution.")
+        print("="*50 + "\n")
+        
+        DRY_RUN = run_dry_run
+        
+        while True:
+            cycle_start = time.time()
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n[{current_time}] Starting automation cycle...")
+            
+            try:
+                if mode_choice == '1':
+                    SKIP_DOWNLOAD = False
+                    run_downloads()
+                    run_predictions()
+                    run_rpa_loop(min_mtime=cycle_start)
+                elif mode_choice == '2':
+                    SKIP_DOWNLOAD = True
+                    run_predictions()
+                    run_rpa_loop(min_mtime=cycle_start)
+                elif mode_choice == '3':
+                    SKIP_DOWNLOAD = True
+                    run_rpa_loop(min_mtime=None)
+                else:
+                    print("Invalid mode chosen. Defaulting to Option 1 flow.")
+                    SKIP_DOWNLOAD = False
+                    run_downloads()
+                    run_predictions()
+                    run_rpa_loop(min_mtime=cycle_start)
+                    
+                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
+            except KeyboardInterrupt:
+                print("\nStopped by user (Ctrl+C). Exiting loop.")
+                break
+            except Exception as e:
+                print(f"\n[ERROR] Exception occurred in cycle: {e}")
+                print("Retrying in the next cycle...")
+                
+            next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
+            print(f"Sleeping for {PERIODIC_INTERVAL_MINUTES} minutes. Next run at {next_run_time}...")
+            
+            sleep_left = interval_secs
+            try:
+                while sleep_left > 0:
+                    time.sleep(min(5, sleep_left))
+                    sleep_left -= 5
+            except KeyboardInterrupt:
+                print("\nStopped by user (Ctrl+C). Exiting.")
+                break
+        
+    elif choice == '7':
         print("Exiting. Have a great day!")
         return
         
