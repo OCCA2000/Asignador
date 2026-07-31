@@ -162,8 +162,23 @@ def run_downloads(download_incidents=True, download_requirements=True):
     print("              1. FASE DE DESCARGA DE CSV")
     print("="*50)
     
+    config_params = load_config_parameters()
+    
+    def resolve_url(url, default_url):
+        if not url:
+            return default_url
+        if not url.startswith("http"):
+            url = f"{SERVICENOW_BASE_URL.rstrip('/')}/{url.lstrip('/')}"
+        if "CSV" not in url.upper():
+            if "?" in url:
+                url = url + "CSV" if url.endswith("&") else url + "&CSV"
+            else:
+                url = url + "?CSV"
+        return url
+    
     if download_incidents:
-        incident_url = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
+        default_incident = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
+        incident_url = resolve_url(config_params.get("incident_download_url"), default_incident)
         print(f"Abriendo lista de incidentes: {incident_url}")
         webbrowser.open(incident_url)
         print("Se abrió una ventana del navegador.")
@@ -177,7 +192,8 @@ def run_downloads(download_incidents=True, download_requirements=True):
             print("Advertencia: Asegúrese de que exista Entrada/incident.csv.")
             
     if download_requirements:
-        req_url = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
+        default_req = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
+        req_url = resolve_url(config_params.get("requirement_download_url"), default_req)
         print(f"\nAbriendo lista de requerimientos: {req_url}")
         webbrowser.open(req_url)
         print("Se abrió una ventana del navegador.")
