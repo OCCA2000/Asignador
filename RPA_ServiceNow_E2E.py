@@ -51,6 +51,12 @@ CLIPBOARD_TIME = 0.5       # Tiempo de espera tras operaciones de copiar/pegar
 SHOW_NOTIFICATION_POPUP = True
 NOTIFICATION_COUNTDOWN_SECONDS = 5
 
+_notification_shown_this_cycle = False
+
+def reset_notification_state():
+    global _notification_shown_this_cycle
+    _notification_shown_this_cycle = False
+
 # Directorios de configuración y datos
 ESPECIFICACIONES_DIR = "Especificaciones"
 INCIDENT_CONFIG_FILE = os.path.join(ESPECIFICACIONES_DIR, "rpa_config_incidents.json")
@@ -130,11 +136,13 @@ def show_pre_start_notification(seconds=NOTIFICATION_COUNTDOWN_SECONDS):
     """
     Muestra una ventana emergente (Topmost) de aviso 5 segundos antes de que el proceso inicie,
     para que el usuario sepa que debe soltar el teclado/mouse si está ocupado.
-    Se activa/desactiva según la constante boolean SHOW_NOTIFICATION_POPUP.
+    Se muestra ÚNICAMENTE UNA VEZ por ciclo de ejecución para evitar alertas repetidas.
     """
-    if not SHOW_NOTIFICATION_POPUP or seconds <= 0:
+    global _notification_shown_this_cycle
+    if not SHOW_NOTIFICATION_POPUP or seconds <= 0 or _notification_shown_this_cycle:
         return
 
+    _notification_shown_this_cycle = True
     print(f"\n[NOTIFICACIÓN] Desplegando ventana emergente ({seconds}s antes de iniciar)...")
     
     try:
@@ -659,6 +667,7 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
 
 def run_rpa_loop(min_mtime=None):
     """Orquesta el ciclo de actualización de interfaz gráfica para incidentes y requerimientos."""
+    reset_notification_state()
     show_pre_start_notification(NOTIFICATION_COUNTDOWN_SECONDS)
     # Cargar coordenadas primero
     coords_incidents = load_config(INCIDENT_CONFIG_FILE)

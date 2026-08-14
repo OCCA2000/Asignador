@@ -50,6 +50,12 @@ CLIPBOARD_TIME = 0.5       # Tiempo de espera tras copiar/pegar en la consola
 SHOW_NOTIFICATION_POPUP = True
 NOTIFICATION_COUNTDOWN_SECONDS = 5
 
+_notification_shown_this_cycle = False
+
+def reset_notification_state():
+    global _notification_shown_this_cycle
+    _notification_shown_this_cycle = False
+
 # Directorios de datos y configuración
 ESPECIFICACIONES_DIR = "Especificaciones"
 USUARIOS_CONFIG_FILE = os.path.join(ESPECIFICACIONES_DIR, "Grupos - Usuarios.csv")
@@ -128,11 +134,13 @@ def show_pre_start_notification(seconds=NOTIFICATION_COUNTDOWN_SECONDS):
     """
     Muestra una ventana emergente (Topmost) de aviso 5 segundos antes de que el proceso inicie,
     para que el usuario sepa que debe soltar el teclado/mouse si está ocupado.
-    Se activa/desactiva según la constante boolean SHOW_NOTIFICATION_POPUP.
+    Se muestra ÚNICAMENTE UNA VEZ por ciclo de ejecución para evitar alertas repetidas.
     """
-    if not SHOW_NOTIFICATION_POPUP or seconds <= 0:
+    global _notification_shown_this_cycle
+    if not SHOW_NOTIFICATION_POPUP or seconds <= 0 or _notification_shown_this_cycle:
         return
 
+    _notification_shown_this_cycle = True
     print(f"\n[NOTIFICACIÓN] Desplegando ventana emergente ({seconds}s antes de iniciar)...")
     
     try:
@@ -675,6 +683,7 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
 
 def run_rpa_loop(min_mtime=None):
     """Ejecuta el pipeline E2E con actualización DOM."""
+    reset_notification_state()
     show_pre_start_notification(NOTIFICATION_COUNTDOWN_SECONDS)
     if not SKIP_DOWNLOAD:
         run_downloads()
@@ -725,6 +734,7 @@ def main():
     choice = input("\nSeleccione una opción (1-7): ").strip()
     
     if choice == '1':
+        reset_notification_state()
         if not SKIP_DOWNLOAD:
             run_downloads(download_incidents=True, download_requirements=False)
         else:
@@ -736,6 +746,7 @@ def main():
         else:
             print("No se encontró archivo de salida de predicción para Incidentes.")
     elif choice == '2':
+        reset_notification_state()
         print("\n--- Procesando únicamente Incidentes (Solo DOM) ---")
         inc_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
         if inc_csv:
@@ -743,6 +754,7 @@ def main():
         else:
             print("No se encontró archivo de salida de predicción para Incidentes.")
     elif choice == '3':
+        reset_notification_state()
         if not SKIP_DOWNLOAD:
             run_downloads(download_incidents=False, download_requirements=True)
         else:
@@ -754,6 +766,7 @@ def main():
         else:
             print("No se encontró archivo de salida de predicción para Requerimientos.")
     elif choice == '4':
+        reset_notification_state()
         print("\n--- Procesando únicamente Requerimientos (Solo DOM) ---")
         req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
         if req_csv:
