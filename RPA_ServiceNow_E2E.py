@@ -54,6 +54,71 @@ REQUIREMENT_CONFIG_FILE = os.path.join(ESPECIFICACIONES_DIR, "rpa_config_require
 ENTRADA_DIR = "Entrada"
 SALIDA_DIR = "Salida"
 
+# ==========================================
+# GESTIÓN DE NAVEGADOR INDEPENDIENTE (EDGE / CHROME)
+# ==========================================
+_browser_window_opened = False
+
+def find_browser_executable():
+    """
+    Busca la ruta del ejecutable del navegador priorizando Microsoft Edge sobre Google Chrome.
+    Devuelve (browser_path, browser_name).
+    """
+    # 1. Buscar Microsoft Edge
+    edge_candidates = [
+        os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Microsoft\\Edge\\Application\\msedge.exe"),
+        os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Microsoft\\Edge\\Application\\msedge.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft\\Edge\\Application\\msedge.exe"),
+        shutil.which("msedge"),
+        shutil.which("msedge.exe")
+    ]
+    for path in edge_candidates:
+        if path and os.path.isfile(path):
+            return path, "Edge"
+
+    # 2. Buscar Google Chrome
+    chrome_candidates = [
+        os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Google\\Chrome\\Application\\chrome.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Google\\Chrome\\Application\\chrome.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google\\Chrome\\Application\\chrome.exe"),
+        shutil.which("chrome"),
+        shutil.which("chrome.exe")
+    ]
+    for path in chrome_candidates:
+        if path and os.path.isfile(path):
+            return path, "Chrome"
+
+    return None, "Default"
+
+def open_url_in_browser(url, force_new_window=False):
+    """
+    Abre una URL en una ventana de navegador independiente (priorizando Edge sobre Chrome).
+    Si es la primera llamada o force_new_window=True, abre una nueva ventana (--new-window).
+    De lo contrario, abre una nueva pestaña en esa ventana.
+    """
+    global _browser_window_opened
+    browser_path, browser_name = find_browser_executable()
+    
+    if browser_path:
+        try:
+            if not _browser_window_opened or force_new_window:
+                print(f"[NAVEGADOR] Abriendo NUEVA VENTANA independiente en {browser_name} ({browser_path})...")
+                subprocess.Popen([browser_path, "--new-window", url])
+                _browser_window_opened = True
+            else:
+                print(f"[NAVEGADOR] Abriendo pestaña en {browser_name}...")
+                subprocess.Popen([browser_path, url])
+            return True
+        except Exception as e:
+            print(f"[ERROR] No se pudo lanzar {browser_name}: {e}. Usando navegador predeterminado del sistema.")
+
+    if not _browser_window_opened or force_new_window:
+        webbrowser.open_new(url)
+        _browser_window_opened = True
+    else:
+        webbrowser.open(url, new=2)
+    return False
+
 def load_config_parameters():
     """
     Carga el archivo rpa_config_parameters.json y devuelve un diccionario
@@ -274,8 +339,8 @@ def run_downloads():
     # 1. Incidentes
     default_incident = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
     incident_url = resolve_url(config_params.get("incident_download_url"), default_incident)
-    print(f"Abriendo lista de incidentes: {incident_url}")
-    webbrowser.open(incident_url)
+    print(f"Abriendo lista de incidentes en navegador independiente: {incident_url}")
+    open_url_in_browser(incident_url)
     print("Se abrió una ventana del navegador.")
     print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
     if DRY_RUN:
@@ -291,8 +356,8 @@ def run_downloads():
     # 2. Requerimientos
     default_req = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
     req_url = resolve_url(config_params.get("requirement_download_url"), default_req)
-    print(f"\nAbriendo lista de requerimientos: {req_url}")
-    webbrowser.open(req_url)
+    print(f"\nAbriendo lista de requerimientos en navegador independiente: {req_url}")
+    open_url_in_browser(req_url)
     print("Se abrió una ventana del navegador.")
     print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
     if DRY_RUN:
@@ -395,8 +460,8 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
         
         ticket_url = f"{SERVICENOW_BASE_URL}/{table_name}.do?sysparm_query=number={ticket_id}"
         
-        # Abrir el ticket en una nueva pestaña del navegador
-        webbrowser.open(ticket_url, new=2)
+        # Abrir el ticket en una pestaña del navegador independiente
+        open_url_in_browser(ticket_url)
         time.sleep(LOAD_TIME)
             
         # 1. Hacer clic y enfocar el cuadro de texto "Asignado a"
@@ -496,8 +561,11 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
             pyautogui.click(update_x, update_y)
             print(f"Clicked 'Update/Save' button at ({update_x}, {update_y})")
             time.sleep(LOAD_TIME)
+            print(f"Cerrando pestaña del ticket {ticket_id} (DRY_RUN=False)...")
+            pyautogui.hotkey('ctrl', 'w')
+            time.sleep(0.5)
         else:
-            print(f"[DRY RUN] Bypassing click on 'Update/Save' button at ({update_x}, {update_y}). Changes not saved.")
+            print(f"[DRY RUN] Bypassing click on 'Update/Save' button at ({update_x}, {update_y}). Changes not saved. Pestaña mantenida abierta para revisión.")
             time.sleep(1.0)
             
     print("\nServiceNow UI update loop finished!")

@@ -53,7 +53,72 @@ ENTRADA_DIR = "Entrada"
 SALIDA_DIR = "Salida"
 
 # ==========================================
-# CATORGA DE MAPEO DE USUARIOS
+# GESTIÓN DE NAVEGADOR INDEPENDIENTE (EDGE / CHROME)
+# ==========================================
+_browser_window_opened = False
+
+def find_browser_executable():
+    """
+    Busca la ruta del ejecutable del navegador priorizando Microsoft Edge sobre Google Chrome.
+    Devuelve (browser_path, browser_name).
+    """
+    # 1. Buscar Microsoft Edge
+    edge_candidates = [
+        os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Microsoft\\Edge\\Application\\msedge.exe"),
+        os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Microsoft\\Edge\\Application\\msedge.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft\\Edge\\Application\\msedge.exe"),
+        shutil.which("msedge"),
+        shutil.which("msedge.exe")
+    ]
+    for path in edge_candidates:
+        if path and os.path.isfile(path):
+            return path, "Edge"
+
+    # 2. Buscar Google Chrome
+    chrome_candidates = [
+        os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Google\\Chrome\\Application\\chrome.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Google\\Chrome\\Application\\chrome.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google\\Chrome\\Application\\chrome.exe"),
+        shutil.which("chrome"),
+        shutil.which("chrome.exe")
+    ]
+    for path in chrome_candidates:
+        if path and os.path.isfile(path):
+            return path, "Chrome"
+
+    return None, "Default"
+
+def open_url_in_browser(url, force_new_window=False):
+    """
+    Abre una URL en una ventana de navegador independiente (priorizando Edge sobre Chrome).
+    Si es la primera llamada o force_new_window=True, abre una nueva ventana (--new-window).
+    De lo contrario, abre una nueva pestaña en esa ventana.
+    """
+    global _browser_window_opened
+    browser_path, browser_name = find_browser_executable()
+    
+    if browser_path:
+        try:
+            if not _browser_window_opened or force_new_window:
+                print(f"[NAVEGADOR] Abriendo NUEVA VENTANA independiente en {browser_name} ({browser_path})...")
+                subprocess.Popen([browser_path, "--new-window", url])
+                _browser_window_opened = True
+            else:
+                print(f"[NAVEGADOR] Abriendo pestaña en {browser_name}...")
+                subprocess.Popen([browser_path, url])
+            return True
+        except Exception as e:
+            print(f"[ERROR] No se pudo lanzar {browser_name}: {e}. Usando navegador predeterminado del sistema.")
+
+    if not _browser_window_opened or force_new_window:
+        webbrowser.open_new(url)
+        _browser_window_opened = True
+    else:
+        webbrowser.open(url, new=2)
+    return False
+
+# ==========================================
+# CARGA DE MAPEO DE USUARIOS
 # ==========================================
 def load_user_id_map():
     """
@@ -179,9 +244,9 @@ def run_downloads(download_incidents=True, download_requirements=True):
     if download_incidents:
         default_incident = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
         incident_url = resolve_url(config_params.get("incident_download_url"), default_incident)
-        print(f"Abriendo lista de incidentes: {incident_url}")
-        webbrowser.open(incident_url)
-        print("Se abrió una ventana del navegador.")
+        print(f"Abriendo lista de incidentes en navegador independiente: {incident_url}")
+        open_url_in_browser(incident_url)
+        print("Se abrió la ventana del navegador.")
         if DRY_RUN:
             input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
         else:
@@ -194,9 +259,9 @@ def run_downloads(download_incidents=True, download_requirements=True):
     if download_requirements:
         default_req = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
         req_url = resolve_url(config_params.get("requirement_download_url"), default_req)
-        print(f"\nAbriendo lista de requerimientos: {req_url}")
-        webbrowser.open(req_url)
-        print("Se abrió una ventana del navegador.")
+        print(f"\nAbriendo lista de requerimientos en navegador independiente: {req_url}")
+        open_url_in_browser(req_url)
+        print("Se abrió la ventana del navegador.")
         if DRY_RUN:
             input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
         else:
@@ -485,22 +550,40 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
         # Construir JavaScript payload
         js_payload = build_js_payload(is_requirement, assignee, sys_id, due_date_str, app_sys_id)
         
-        # 1. Abrir ticket en el navegador
+        # 1. Abrir ticket en el navegador independiente
         ticket_url = f"{SERVICENOW_BASE_URL}/{table_name}.do?sysparm_query=number={ticket_id}"
-        webbrowser.open(ticket_url, new=2)
+        open_url_in_browser(ticket_url)
         time.sleep(LOAD_TIME)
         
-        # 2. Abrir consola DevTools (Ctrl+Shift+J)
-        pyautogui.hotkey('ctrl', 'shift', 'j')
-        time.sleep(1.0)
-        
-        # 3. Copiar script JS al portapapeles y pegar en la consola
-        pyperclip.copy(js_payload)
-        time.sleep(CLIPBOARD_TIME)
-        pyautogui.hotkey('ctrl', 'v')
-        time.sleep(CLIPBOARD_TIME)
-        pyautogui.press('enter')
-        time.sleep(1.5)
+        ticket_success = False
+        try:
+            # 2. Abrir consola DevTools (Ctrl+Shift+J)
+            pyautogui.hotkey('ctrl', 'shift', 'j')
+            time.sleep(1.0)
+            
+            # 3. Copiar script JS al portapapeles y pegar en la consola
+            pyperclip.copy(js_payload)
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.hotkey('ctrl', 'v')
+            time.sleep(CLIPBOARD_TIME)
+            pyautogui.press('enter')
+            time.sleep(1.5)
+            
+            ticket_success = True
+        except Exception as err:
+            print(f"[ERROR] Falló la actualización DOM del ticket {ticket_id}: {err}")
+            ticket_success = False
+
+        # 4. Gestión de pestañas: solo cerrar si se completó con éxito Y DRY_RUN es False
+        if ticket_success and not DRY_RUN:
+            print(f"Cerrando pestaña del ticket {ticket_id} (DRY_RUN=False)...")
+            pyautogui.hotkey('ctrl', 'w')
+            time.sleep(0.5)
+        else:
+            if DRY_RUN:
+                print(f"[DRY_RUN=True] Pestaña mantenida abierta para {ticket_id} para revisión y guardado manual.")
+            else:
+                print(f"[ADVERTENCIA] Pestaña mantenida abierta para {ticket_id} por error o proceso incompleto.")
         
     print("\nServiceNow DevTools DOM update loop finished!")
 
