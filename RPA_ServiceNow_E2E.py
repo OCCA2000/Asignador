@@ -47,6 +47,10 @@ pyautogui.PAUSE = 1.0      # Pausa después de cada acción de GUI (en segundos)
 LOAD_TIME = 5.0            # Tiempo de espera para cargar la página del ticket
 CLIPBOARD_TIME = 0.5       # Tiempo de espera tras operaciones de copiar/pegar
 
+# Ventana emergente de notificación antes de iniciar el proceso
+SHOW_NOTIFICATION_POPUP = True
+NOTIFICATION_COUNTDOWN_SECONDS = 5
+
 # Directorios de configuración y datos
 ESPECIFICACIONES_DIR = "Especificaciones"
 INCIDENT_CONFIG_FILE = os.path.join(ESPECIFICACIONES_DIR, "rpa_config_incidents.json")
@@ -118,6 +122,88 @@ def open_url_in_browser(url, force_new_window=False):
     else:
         webbrowser.open(url, new=2)
     return False
+
+# ==========================================
+# VENTANA EMERGENTE DE NOTIFICACIÓN DE INICIO
+# ==========================================
+def show_pre_start_notification(seconds=NOTIFICATION_COUNTDOWN_SECONDS):
+    """
+    Muestra una ventana emergente (Topmost) de aviso 5 segundos antes de que el proceso inicie,
+    para que el usuario sepa que debe soltar el teclado/mouse si está ocupado.
+    Se activa/desactiva según la constante boolean SHOW_NOTIFICATION_POPUP.
+    """
+    if not SHOW_NOTIFICATION_POPUP or seconds <= 0:
+        return
+
+    print(f"\n[NOTIFICACIÓN] Desplegando ventana emergente ({seconds}s antes de iniciar)...")
+    
+    try:
+        import tkinter as tk
+        
+        root = tk.Tk()
+        root.title("⚠️ Atención: Automatización RPA ServiceNow")
+        root.attributes("-topmost", True)
+        root.geometry("460x190")
+        root.resizable(False, False)
+        
+        # Centrar ventana en la pantalla
+        root.update_idletasks()
+        width = root.winfo_width()
+        height = root.winfo_height()
+        x = (root.winfo_screenwidth() // 2) - (width // 2)
+        y = (root.winfo_screenheight() // 2) - (height // 2)
+        root.geometry(f'+{x}+{y}')
+        
+        # Diseño visual de la alerta
+        root.configure(bg='#1e1e2e')
+        
+        lbl_title = tk.Label(
+            root, 
+            text="⚠️ AUTOMATIZACIÓN RPA A PUNTO DE INICIAR", 
+            font=("Arial", 11, "bold"), 
+            fg="#f38ba8", 
+            bg="#1e1e2e",
+            pady=12
+        )
+        lbl_title.pack()
+        
+        lbl_msg = tk.Label(
+            root, 
+            text="El proceso tomará el control del navegador y teclado.\nPor favor, deje de interactuar para evitar interrupciones.", 
+            font=("Arial", 9), 
+            fg="#cdd6f4", 
+            bg="#1e1e2e"
+        )
+        lbl_msg.pack()
+        
+        lbl_timer = tk.Label(
+            root, 
+            text=f"El proceso iniciará en {seconds} segundos...", 
+            font=("Arial", 11, "bold"), 
+            fg="#fab387", 
+            bg="#1e1e2e",
+            pady=12
+        )
+        lbl_timer.pack()
+        
+        remaining = [seconds]
+        
+        def update_countdown():
+            if remaining[0] > 1:
+                remaining[0] -= 1
+                lbl_timer.config(text=f"El proceso iniciará en {remaining[0]} segundos...")
+                root.after(1000, update_countdown)
+            else:
+                root.destroy()
+                
+        root.after(1000, update_countdown)
+        root.mainloop()
+        
+    except Exception as e:
+        print(f"[ADVERTENCIA] No se pudo desplegar la ventana gráfica ({e}). Usando temporizador de consola.")
+        for i in range(seconds, 0, -1):
+            print(f"El proceso iniciará en {i} segundos...")
+            time.sleep(1)
 
 def load_config_parameters():
     """
@@ -318,6 +404,7 @@ def find_latest_output_file(pattern, min_mtime=None):
 # ==========================================
 def run_downloads():
     """Maneja la descarga de tickets desde ServiceNow."""
+    show_pre_start_notification(NOTIFICATION_COUNTDOWN_SECONDS)
     print("\n" + "="*50)
     print("              1. FASE DE DESCARGA DE CSV")
     print("="*50)
@@ -572,6 +659,7 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
 
 def run_rpa_loop(min_mtime=None):
     """Orquesta el ciclo de actualización de interfaz gráfica para incidentes y requerimientos."""
+    show_pre_start_notification(NOTIFICATION_COUNTDOWN_SECONDS)
     # Cargar coordenadas primero
     coords_incidents = load_config(INCIDENT_CONFIG_FILE)
     coords_requirements = load_config(REQUIREMENT_CONFIG_FILE)
