@@ -51,6 +51,10 @@ CLIPBOARD_TIME = 0.5       # Tiempo de espera tras operaciones de copiar/pegar
 SHOW_NOTIFICATION_POPUP = True
 NOTIFICATION_COUNTDOWN_SECONDS = 5
 
+# Cierre automático de todo el navegador al finalizar la iteración completa del ciclo (vía Alt+F4)
+CLOSE_BROWSER_AT_END = True
+CLOSE_BROWSER_WAIT_TIME = 10.0  # Tiempo de espera personalizable en segundos antes de cerrar el navegador al final
+
 _notification_shown_this_cycle = False
 
 def reset_notification_state():
@@ -212,6 +216,31 @@ def show_pre_start_notification(seconds=NOTIFICATION_COUNTDOWN_SECONDS):
         for i in range(seconds, 0, -1):
             print(f"El proceso iniciará en {i} segundos...")
             time.sleep(1)
+
+# ==========================================
+# CIERRE DE NAVEGADOR AL FINAL DE LA ITERACIÓN
+# ==========================================
+def close_browser_at_end():
+    """
+    Al finalizar TODA la iteración del ciclo, si CLOSE_BROWSER_AT_END es True y DRY_RUN es False,
+    espera CLOSE_BROWSER_WAIT_TIME segundos y cierra la ventana del navegador con Alt+F4.
+    """
+    global _browser_window_opened
+    if not _browser_window_opened:
+        return
+
+    if CLOSE_BROWSER_AT_END and not DRY_RUN:
+        print(f"\n[FINAL DE CICLO] Esperando {CLOSE_BROWSER_WAIT_TIME} segundos antes de cerrar la ventana del navegador (Alt+F4)...")
+        time.sleep(CLOSE_BROWSER_WAIT_TIME)
+        print("[FINAL DE CICLO] Cerrando ventana del navegador con Alt+F4...")
+        pyautogui.hotkey('alt', 'f4')
+        time.sleep(1.0)
+        _browser_window_opened = False
+    else:
+        if DRY_RUN:
+            print(f"\n[DRY_RUN=True] El navegador y sus pestañas se mantienen abiertos para revisión y guardado manual.")
+        else:
+            print(f"\n[CONFIG] Cierre automático del navegador desactivado (CLOSE_BROWSER_AT_END=False).")
 
 def load_config_parameters():
     """
@@ -656,11 +685,8 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
             pyautogui.click(update_x, update_y)
             print(f"Clicked 'Update/Save' button at ({update_x}, {update_y})")
             time.sleep(LOAD_TIME)
-            print(f"Cerrando pestaña del ticket {ticket_id} (DRY_RUN=False)...")
-            pyautogui.hotkey('ctrl', 'w')
-            time.sleep(0.5)
         else:
-            print(f"[DRY RUN] Bypassing click on 'Update/Save' button at ({update_x}, {update_y}). Changes not saved. Pestaña mantenida abierta para revisión.")
+            print(f"[DRY RUN] Bypassing click on 'Update/Save' button at ({update_x}, {update_y}). Changes not saved.")
             time.sleep(1.0)
             
     print("\nServiceNow UI update loop finished!")
@@ -696,6 +722,8 @@ def run_rpa_loop(min_mtime=None):
             print("Skipping Requirement updating: Requirement config coordinates not loaded.")
     else:
         print("No requirement predictions output file found for this cycle to process.")
+        
+    close_browser_at_end()
 
 # ==========================================
 # MODO DAEMON / AUTOMÁTICO

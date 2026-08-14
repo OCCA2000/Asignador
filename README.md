@@ -135,10 +135,10 @@ py RPA_ServiceNow_E2E.py
 
 ### Modo DRY_RUN y Reglas de Pestañas
 - Definido en el script mediante `DRY_RUN = True` (o `False`).
-- **Pestañas**:
-  - `DRY_RUN = True`: Navega a cada ticket y realiza las inyecciones DOM o llenado de campos, pero **no guarda el ticket y mantiene la pestaña abierta** para permitir la inspección y guardado manual del usuario.
-  - `DRY_RUN = False`: Ejecuta el guardado/submisión del ticket y **cierra la pestaña (`Ctrl+W`)** tras completar la actualización.
-  - La ventana principal del navegador y cualquier pestaña con errores o incompleta **nunca se cierran automáticamente**.
+- **Pestañas e Iteraciones**:
+  - **Sin `Ctrl+W`**: No se cierra ninguna pestaña individual durante el procesamiento de los tickets. Todas las pestañas creadas durante el ciclo permanecen abiertas.
+  - `DRY_RUN = True`: Al finalizar la iteración completa, la ventana del navegador y todas sus pestañas abiertas **se mantienen abiertas** para permitir la inspección visual y guardado manual.
+  - `DRY_RUN = False` (con `CLOSE_BROWSER_AT_END = True`): Al finalizar **toda la iteración del ciclo**, el sistema espera un tiempo personalizable (`CLOSE_BROWSER_WAIT_TIME = 10.0` segundos por defecto) y cierra la ventana independiente del navegador completa usando **`Alt+F4`**.
 
 ### Validaciones de Turno y Carga de Trabajo
 El sistema aplica reglas automáticas para derivar incidentes específicos al personal en guardia/turno:

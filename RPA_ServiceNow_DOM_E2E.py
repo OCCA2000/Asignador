@@ -50,6 +50,10 @@ CLIPBOARD_TIME = 0.5       # Tiempo de espera tras copiar/pegar en la consola
 SHOW_NOTIFICATION_POPUP = True
 NOTIFICATION_COUNTDOWN_SECONDS = 5
 
+# Cierre automático de todo el navegador al finalizar la iteración completa del ciclo (vía Alt+F4)
+CLOSE_BROWSER_AT_END = True
+CLOSE_BROWSER_WAIT_TIME = 10.0  # Tiempo de espera personalizable en segundos antes de cerrar el navegador al final
+
 _notification_shown_this_cycle = False
 
 def reset_notification_state():
@@ -210,6 +214,31 @@ def show_pre_start_notification(seconds=NOTIFICATION_COUNTDOWN_SECONDS):
         for i in range(seconds, 0, -1):
             print(f"El proceso iniciará en {i} segundos...")
             time.sleep(1)
+
+# ==========================================
+# CIERRE DE NAVEGADOR AL FINAL DE LA ITERACIÓN
+# ==========================================
+def close_browser_at_end():
+    """
+    Al finalizar TODA la iteración del ciclo, si CLOSE_BROWSER_AT_END es True y DRY_RUN es False,
+    espera CLOSE_BROWSER_WAIT_TIME segundos y cierra la ventana del navegador con Alt+F4.
+    """
+    global _browser_window_opened
+    if not _browser_window_opened:
+        return
+
+    if CLOSE_BROWSER_AT_END and not DRY_RUN:
+        print(f"\n[FINAL DE CICLO] Esperando {CLOSE_BROWSER_WAIT_TIME} segundos antes de cerrar la ventana del navegador (Alt+F4)...")
+        time.sleep(CLOSE_BROWSER_WAIT_TIME)
+        print("[FINAL DE CICLO] Cerrando ventana del navegador con Alt+F4...")
+        pyautogui.hotkey('alt', 'f4')
+        time.sleep(1.0)
+        _browser_window_opened = False
+    else:
+        if DRY_RUN:
+            print(f"\n[DRY_RUN=True] El navegador y sus pestañas se mantienen abiertos para revisión y guardado manual.")
+        else:
+            print(f"\n[CONFIG] Cierre automático del navegador desactivado (CLOSE_BROWSER_AT_END=False).")
 
 # ==========================================
 # CARGA DE MAPEO DE USUARIOS
@@ -668,16 +697,11 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
             print(f"[ERROR] Falló la actualización DOM del ticket {ticket_id}: {err}")
             ticket_success = False
 
-        # 4. Gestión de pestañas: solo cerrar si se completó con éxito Y DRY_RUN es False
-        if ticket_success and not DRY_RUN:
-            print(f"Cerrando pestaña del ticket {ticket_id} (DRY_RUN=False)...")
-            pyautogui.hotkey('ctrl', 'w')
-            time.sleep(0.5)
+        # 4. Gestión de pestañas y finalización de ticket
+        if ticket_success:
+            print(f"Inyección completada exitosamente para el ticket {ticket_id}.")
         else:
-            if DRY_RUN:
-                print(f"[DRY_RUN=True] Pestaña mantenida abierta para {ticket_id} para revisión y guardado manual.")
-            else:
-                print(f"[ADVERTENCIA] Pestaña mantenida abierta para {ticket_id} por error o proceso incompleto.")
+            print(f"[ADVERTENCIA] Proceso incompleto o con errores en el ticket {ticket_id}.")
         
     print("\nServiceNow DevTools DOM update loop finished!")
 
@@ -711,6 +735,9 @@ def run_rpa_loop(min_mtime=None):
         update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
     else:
         print("\nNo se encontró archivo de salida para Requerimientos.")
+        
+    # Cierre automático de todo el navegador con Alt+F4 al finalizar toda la iteración
+    close_browser_at_end()
 
 # ==========================================
 # MENÚ PRINCIPAL
@@ -745,6 +772,7 @@ def main():
             update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
         else:
             print("No se encontró archivo de salida de predicción para Incidentes.")
+        close_browser_at_end()
     elif choice == '2':
         reset_notification_state()
         print("\n--- Procesando únicamente Incidentes (Solo DOM) ---")
@@ -753,6 +781,7 @@ def main():
             update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
         else:
             print("No se encontró archivo de salida de predicción para Incidentes.")
+        close_browser_at_end()
     elif choice == '3':
         reset_notification_state()
         if not SKIP_DOWNLOAD:
@@ -765,6 +794,7 @@ def main():
             update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
         else:
             print("No se encontró archivo de salida de predicción para Requerimientos.")
+        close_browser_at_end()
     elif choice == '4':
         reset_notification_state()
         print("\n--- Procesando únicamente Requerimientos (Solo DOM) ---")
@@ -773,6 +803,7 @@ def main():
             update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
         else:
             print("No se encontró archivo de salida de predicción para Requerimientos.")
+        close_browser_at_end()
     elif choice == '5':
         run_rpa_loop()
     elif choice == '6':
