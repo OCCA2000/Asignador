@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
-from Programas.CleaningData import archive_previous_files, get_windows_date_format
+from Programas.CleaningData import archive_previous_files, get_windows_date_format, ExecutionLogger
 
 # ==========================================
 # CONFIGURACIÓN
@@ -395,6 +395,16 @@ def run_downloads(download_incidents=True, download_requirements=True):
         if not move_latest_download("*sc_req_item*.csv", "sc_req_item.csv"):
             print("Advertencia: Asegúrese de que exista Entrada/sc_req_item.csv.")
 
+def run_subprocess_logged(cmd, cwd=None):
+    """Ejecuta un subproceso transmitiendo stdout/stderr a sys.stdout en tiempo real."""
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    process.wait()
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, cmd)
+
 def run_predictions(run_incidents=True, run_requirements=True):
     """Ejecuta los scripts de predicción de aprendizaje automático."""
     print("\n" + "="*50)
@@ -403,13 +413,14 @@ def run_predictions(run_incidents=True, run_requirements=True):
     
     archive_previous_files(SALIDA_DIR, "*.csv")
     archive_previous_files(SALIDA_DIR, "*.txt")
+    archive_previous_files(SALIDA_DIR, "*.log")
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     if run_incidents:
         print("Running Assigner_Incidents.py...")
         try:
-            subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], check=True, cwd=script_dir)
+            run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], cwd=script_dir)
             print("Incident predictions complete!")
         except subprocess.CalledProcessError as e:
             print(f"Error executing Assigner_Incidents.py: {e}")
@@ -417,7 +428,7 @@ def run_predictions(run_incidents=True, run_requirements=True):
     if run_requirements:
         print("\nRunning Assigner_Requirements.py...")
         try:
-            subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], check=True, cwd=script_dir)
+            run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], cwd=script_dir)
             print("Requirement predictions complete!")
         except subprocess.CalledProcessError as e:
             print(f"Error executing Assigner_Requirements.py: {e}")
@@ -761,51 +772,56 @@ def main():
     choice = input("\nSeleccione una opción (1-7): ").strip()
     
     if choice == '1':
-        reset_notification_state()
-        if not SKIP_DOWNLOAD:
-            run_downloads(download_incidents=True, download_requirements=False)
-        else:
-            print("\nOmitiendo fase de descarga (SKIP_DOWNLOAD=True). Usando CSVs locales en Entrada/.")
-        run_predictions(run_incidents=True, run_requirements=False)
-        inc_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
-        if inc_csv:
-            update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
-        else:
-            print("No se encontró archivo de salida de predicción para Incidentes.")
-        close_browser_at_end()
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_dom_incidentes"):
+            reset_notification_state()
+            if not SKIP_DOWNLOAD:
+                run_downloads(download_incidents=True, download_requirements=False)
+            else:
+                print("\nOmitiendo fase de descarga (SKIP_DOWNLOAD=True). Usando CSVs locales en Entrada/.")
+            run_predictions(run_incidents=True, run_requirements=False)
+            inc_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
+            if inc_csv:
+                update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
+            else:
+                print("No se encontró archivo de salida de predicción para Incidentes.")
+            close_browser_at_end()
     elif choice == '2':
-        reset_notification_state()
-        print("\n--- Procesando únicamente Incidentes (Solo DOM) ---")
-        inc_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
-        if inc_csv:
-            update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
-        else:
-            print("No se encontró archivo de salida de predicción para Incidentes.")
-        close_browser_at_end()
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_dom_incidentes"):
+            reset_notification_state()
+            print("\n--- Procesando únicamente Incidentes (Solo DOM) ---")
+            inc_csv = find_latest_output_file("incidentes_con_asignacion_*.csv")
+            if inc_csv:
+                update_tickets_in_servicenow_dom(inc_csv, is_requirement=False)
+            else:
+                print("No se encontró archivo de salida de predicción para Incidentes.")
+            close_browser_at_end()
     elif choice == '3':
-        reset_notification_state()
-        if not SKIP_DOWNLOAD:
-            run_downloads(download_incidents=False, download_requirements=True)
-        else:
-            print("\nOmitiendo fase de descarga (SKIP_DOWNLOAD=True). Usando CSVs locales en Entrada/.")
-        run_predictions(run_incidents=False, run_requirements=True)
-        req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
-        if req_csv:
-            update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
-        else:
-            print("No se encontró archivo de salida de predicción para Requerimientos.")
-        close_browser_at_end()
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_dom_requerimientos"):
+            reset_notification_state()
+            if not SKIP_DOWNLOAD:
+                run_downloads(download_incidents=False, download_requirements=True)
+            else:
+                print("\nOmitiendo fase de descarga (SKIP_DOWNLOAD=True). Usando CSVs locales en Entrada/.")
+            run_predictions(run_incidents=False, run_requirements=True)
+            req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
+            if req_csv:
+                update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
+            else:
+                print("No se encontró archivo de salida de predicción para Requerimientos.")
+            close_browser_at_end()
     elif choice == '4':
-        reset_notification_state()
-        print("\n--- Procesando únicamente Requerimientos (Solo DOM) ---")
-        req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
-        if req_csv:
-            update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
-        else:
-            print("No se encontró archivo de salida de predicción para Requerimientos.")
-        close_browser_at_end()
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_dom_requerimientos"):
+            reset_notification_state()
+            print("\n--- Procesando únicamente Requerimientos (Solo DOM) ---")
+            req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv")
+            if req_csv:
+                update_tickets_in_servicenow_dom(req_csv, is_requirement=True)
+            else:
+                print("No se encontró archivo de salida de predicción para Requerimientos.")
+            close_browser_at_end()
     elif choice == '5':
-        run_rpa_loop()
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_dom_completa"):
+            run_rpa_loop()
     elif choice == '6':
         print("\n" + "="*50)
         print("   EJECUCIÓN COMPLETA PERIÓDICA (INCIDENTES + REQUERIMIENTOS)")
@@ -826,20 +842,21 @@ def main():
         print("Presione Ctrl+C en esta terminal para detener la automatización.")
         print("="*50 + "\n")
         
-        while True:
-            cycle_start = time.time()
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"\n[{current_time}] Iniciando ciclo de automatización...")
-            
-            try:
-                run_rpa_loop(min_mtime=cycle_start)
-                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Ciclo finalizado exitosamente.")
-            except KeyboardInterrupt:
-                print("\nAutomatización detenida por el usuario (Ctrl+C). Saliendo del ciclo.")
-                break
-            except Exception as e:
-                print(f"\n[ERROR] Ocurrió una excepción en el ciclo: {e}")
-                print("Reintentando en el siguiente ciclo...")
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_dom_periodica"):
+            while True:
+                cycle_start = time.time()
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f"\n[{current_time}] Iniciando ciclo de automatización...")
+                
+                try:
+                    run_rpa_loop(min_mtime=cycle_start)
+                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Ciclo finalizado exitosamente.")
+                except KeyboardInterrupt:
+                    print("\nAutomatización detenida por el usuario (Ctrl+C). Saliendo del ciclo.")
+                    break
+                except Exception as e:
+                    print(f"\n[ERROR] Ocurrió una excepción en el ciclo: {e}")
+                    print("Reintentando en el siguiente ciclo...")
                 
             next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
             print(f"Esperando {interval_mins} minutos. Siguiente ejecución a las {next_run_time}...")

@@ -1,4 +1,4 @@
-from Programas.CleaningData import clean_csv_file, get_output_path_date, get_windows_date_format
+from Programas.CleaningData import clean_csv_file, get_output_path_date, get_windows_date_format, ExecutionLogger
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -384,4 +384,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if hasattr(sys.stdout, 'log_file'):
+        main()
+    else:
+        with ExecutionLogger("Salida", prefix="ejecucion_requirements"):
+            main()

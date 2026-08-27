@@ -1,6 +1,8 @@
 import glob
 import os
 import shutil
+import sys
+import traceback
 from datetime import datetime
 
 
@@ -89,9 +91,19 @@ def archive_previous_files(base_dir: str, pattern: str):
     """
     if not os.path.exists(base_dir):
         return
+
+    active_log_path = None
+    if hasattr(sys.stdout, 'log_file') and getattr(sys.stdout, 'log_file', None):
+        try:
+            active_log_path = os.path.abspath(sys.stdout.log_file.name)
+        except Exception:
+            pass
+
     search_path = os.path.join(base_dir, pattern)
     target_files = [f for f in glob.glob(search_path) if os.path.isfile(f)]
     for filepath in target_files:
+        if active_log_path and os.path.abspath(filepath) == active_log_path:
+            continue  # Omitir el archivo de log actualmente en uso
         filename = os.path.basename(filepath)
         mtime = os.path.getmtime(filepath)
         date_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
@@ -212,4 +224,85 @@ def get_windows_date_format() -> str:
 
     return default_format
 
+
+class TeeStream:
+    """Duplica las salidas de un stream (sys.stdout/sys.stderr) hacia el stream original y un archivo de log."""
+    def __init__(self, original_stream, log_file):
+        self.original_stream = original_stream
+        self.log_file = log_file
+
+    def write(self, message):
+        if self.original_stream:
+            self.original_stream.write(message)
+            self.original_stream.flush()
+        if self.log_file and not self.log_file.closed:
+            self.log_file.write(message)
+            self.log_file.flush()
+
+    def flush(self):
+        if self.original_stream:
+            self.original_stream.flush()
+        if self.log_file and not self.log_file.closed:
+            self.log_file.flush()
+
+    def isatty(self):
+        return getattr(self.original_stream, 'isatty', lambda: False)()
+
+
+class ExecutionLogger:
+    """
+    Gestor de logs por ejecución.
+    Archiva logs previos en base_dir hacia base_dir/YYYY-MM-DD/, abre un nuevo archivo de log
+    con marca de tiempo y captura stdout y stderr.
+    """
+    def __init__(self, base_dir: str = "Salida", prefix: str = "ejecucion", archive_logs: bool = True):
+        self.base_dir = base_dir
+        self.prefix = prefix
+        self.archive_logs = archive_logs
+        self.log_file = None
+        self.log_path = None
+        self._orig_stdout = None
+        self._orig_stderr = None
+
+    def start(self):
+        if self.archive_logs:
+            archive_previous_files(self.base_dir, "*.log")
+        
+        now = datetime.now()
+        timing = now.strftime('%Y-%m-%d_%H-%M-%S')
+        os.makedirs(self.base_dir, exist_ok=True)
+        self.log_path = os.path.join(self.base_dir, f"{self.prefix}_{timing}.log")
+        
+        self.log_file = open(self.log_path, 'a', encoding='utf-8')
+        self._orig_stdout = sys.stdout
+        self._orig_stderr = sys.stderr
+        
+        sys.stdout = TeeStream(self._orig_stdout, self.log_file)
+        sys.stderr = TeeStream(self._orig_stderr, self.log_file)
+        
+        print(f"=== INICIO DE EJECUCIÓN [{now.strftime('%Y-%m-%d %H:%M:%S')}] ===")
+        print(f"Archivo de log en: {self.log_path}\n")
+        return self.log_path
+
+    def stop(self):
+        if self._orig_stdout:
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n=== FIN DE EJECUCIÓN [{now_str}] ===")
+            sys.stdout = self._orig_stdout
+            sys.stderr = self._orig_stderr
+            self._orig_stdout = None
+            self._orig_stderr = None
+        if self.log_file and not self.log_file.closed:
+            self.log_file.close()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            print("\n[EXCEPCIÓN NO CONTROLADA CAPTURADA EN LOG]", file=sys.stderr)
+            traceback.print_exception(exc_type, exc_val, exc_tb, file=sys.stderr)
+        self.stop()
+        return False
 

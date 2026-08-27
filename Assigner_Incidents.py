@@ -1,4 +1,4 @@
-from Programas.CleaningData import clean_csv_file, get_output_path_date
+from Programas.CleaningData import clean_csv_file, get_output_path_date, ExecutionLogger
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime
 import glob
@@ -272,4 +272,9 @@ def main():
     print(f"Incident assignment process completed successfully at {timing}")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if hasattr(sys.stdout, 'log_file'):
+        main()
+    else:
+        with ExecutionLogger("Salida", prefix="ejecucion_incidents"):
+            main()

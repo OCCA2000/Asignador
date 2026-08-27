@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
-from Programas.CleaningData import archive_previous_files, get_windows_date_format
+from Programas.CleaningData import archive_previous_files, get_windows_date_format, ExecutionLogger
 
 # ==========================================
 # CONFIGURACIÓN
@@ -493,6 +493,16 @@ def run_downloads():
     if not move_latest_download("*sc_req_item*.csv", "sc_req_item.csv"):
         print("Advertencia: No se pudo encontrar/mover automáticamente el CSV de requerimientos. Asegúrese de que exista Entrada/sc_req_item.csv.")
 
+def run_subprocess_logged(cmd, cwd=None):
+    """Ejecuta un subproceso transmitiendo stdout/stderr a sys.stdout en tiempo real."""
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    process.wait()
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, cmd)
+
 def run_predictions():
     """Ejecuta los scripts de predicción de aprendizaje automático."""
     print("\n" + "="*50)
@@ -502,13 +512,14 @@ def run_predictions():
     # Archivar ejecuciones anteriores en Salida/ hacia sus carpetas por fecha
     archive_previous_files(SALIDA_DIR, "*.csv")
     archive_previous_files(SALIDA_DIR, "*.txt")
+    archive_previous_files(SALIDA_DIR, "*.log")
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     # Run Incident Assigner
     print("Running Assigner_Incidents.py...")
     try:
-        subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], check=True, cwd=script_dir)
+        run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], cwd=script_dir)
         print("Incident predictions complete!")
     except subprocess.CalledProcessError as e:
         print(f"Error executing Assigner_Incidents.py: {e}")
@@ -516,7 +527,7 @@ def run_predictions():
     # Run Requirement Assigner
     print("\nRunning Assigner_Requirements.py...")
     try:
-        subprocess.run([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], check=True, cwd=script_dir)
+        run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], cwd=script_dir)
         print("Requirement predictions complete!")
     except subprocess.CalledProcessError as e:
         print(f"Error executing Assigner_Requirements.py: {e}")
@@ -764,37 +775,38 @@ def run_daemon_mode():
     global SKIP_DOWNLOAD, DRY_RUN
     DRY_RUN = daemon_dry_run
     
-    while True:
-        cycle_start = time.time()
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"\n[{current_time}] Starting automation cycle...")
-        
-        try:
-            if mode_choice == '1':
-                SKIP_DOWNLOAD = False
-                run_downloads()
-                run_predictions()
-                run_rpa_loop(min_mtime=cycle_start)
-            elif mode_choice == '2':
-                SKIP_DOWNLOAD = True
-                run_predictions()
-                run_rpa_loop(min_mtime=cycle_start)
-            elif mode_choice == '3':
-                SKIP_DOWNLOAD = True
-                run_rpa_loop(min_mtime=None)
-            else:
-                print("Invalid mode chosen. Defaulting to Option 2 flow.")
-                SKIP_DOWNLOAD = True
-                run_predictions()
-                run_rpa_loop(min_mtime=cycle_start)
-                
-            print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
-        except KeyboardInterrupt:
-            print("\nDaemon stopped by user (Ctrl+C). Exiting loop.")
-            break
-        except Exception as e:
-            print(f"\n[ERROR] Exception occurred in daemon cycle: {e}")
-            print("Retrying in the next cycle...")
+    with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_gui_daemon"):
+        while True:
+            cycle_start = time.time()
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n[{current_time}] Starting automation cycle...")
+            
+            try:
+                if mode_choice == '1':
+                    SKIP_DOWNLOAD = False
+                    run_downloads()
+                    run_predictions()
+                    run_rpa_loop(min_mtime=cycle_start)
+                elif mode_choice == '2':
+                    SKIP_DOWNLOAD = True
+                    run_predictions()
+                    run_rpa_loop(min_mtime=cycle_start)
+                elif mode_choice == '3':
+                    SKIP_DOWNLOAD = True
+                    run_rpa_loop(min_mtime=None)
+                else:
+                    print("Invalid mode chosen. Defaulting to Option 2 flow.")
+                    SKIP_DOWNLOAD = True
+                    run_predictions()
+                    run_rpa_loop(min_mtime=cycle_start)
+                    
+                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
+            except KeyboardInterrupt:
+                print("\nDaemon stopped by user (Ctrl+C). Exiting loop.")
+                break
+            except Exception as e:
+                print(f"\n[ERROR] Exception occurred in daemon cycle: {e}")
+                print("Retrying in the next cycle...")
             
         next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
         print(f"Sleeping for {interval_mins} minutes. Next run at {next_run_time}...")
@@ -829,29 +841,32 @@ def main():
     global SKIP_DOWNLOAD, DRY_RUN
     
     if choice == '1':
-        SKIP_DOWNLOAD = False
-        dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
-        DRY_RUN = dry_choice != 'n'
-        
-        cycle_start = time.time()
-        run_downloads()
-        run_predictions()
-        run_rpa_loop(min_mtime=cycle_start)
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_gui_e2e"):
+            SKIP_DOWNLOAD = False
+            dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
+            DRY_RUN = dry_choice != 'n'
+            
+            cycle_start = time.time()
+            run_downloads()
+            run_predictions()
+            run_rpa_loop(min_mtime=cycle_start)
         
     elif choice == '2':
-        SKIP_DOWNLOAD = True
-        dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
-        DRY_RUN = dry_choice != 'n'
-        
-        cycle_start = time.time()
-        run_predictions()
-        run_rpa_loop(min_mtime=cycle_start)
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_gui_models"):
+            SKIP_DOWNLOAD = True
+            dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
+            DRY_RUN = dry_choice != 'n'
+            
+            cycle_start = time.time()
+            run_predictions()
+            run_rpa_loop(min_mtime=cycle_start)
         
     elif choice == '3':
-        dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
-        DRY_RUN = dry_choice != 'n'
-        
-        run_rpa_loop(min_mtime=None)
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_gui_updates"):
+            dry_choice = input("Run in DRY RUN mode? (Navigates/fills fields without saving) [y/N]: ").strip().lower()
+            DRY_RUN = dry_choice != 'n'
+            
+            run_rpa_loop(min_mtime=None)
         
     elif choice == '4':
         run_setup()
@@ -881,38 +896,39 @@ def main():
         
         DRY_RUN = run_dry_run
         
-        while True:
-            cycle_start = time.time()
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print(f"\n[{current_time}] Starting automation cycle...")
-            
-            try:
-                if mode_choice == '1':
-                    SKIP_DOWNLOAD = False
-                    run_downloads()
-                    run_predictions()
-                    run_rpa_loop(min_mtime=cycle_start)
-                elif mode_choice == '2':
-                    SKIP_DOWNLOAD = True
-                    run_predictions()
-                    run_rpa_loop(min_mtime=cycle_start)
-                elif mode_choice == '3':
-                    SKIP_DOWNLOAD = True
-                    run_rpa_loop(min_mtime=None)
-                else:
-                    print("Invalid mode chosen. Defaulting to Option 1 flow.")
-                    SKIP_DOWNLOAD = False
-                    run_downloads()
-                    run_predictions()
-                    run_rpa_loop(min_mtime=cycle_start)
-                    
-                print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
-            except KeyboardInterrupt:
-                print("\nStopped by user (Ctrl+C). Exiting loop.")
-                break
-            except Exception as e:
-                print(f"\n[ERROR] Exception occurred in cycle: {e}")
-                print("Retrying in the next cycle...")
+        with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_gui_periodica"):
+            while True:
+                cycle_start = time.time()
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                print(f"\n[{current_time}] Starting automation cycle...")
+                
+                try:
+                    if mode_choice == '1':
+                        SKIP_DOWNLOAD = False
+                        run_downloads()
+                        run_predictions()
+                        run_rpa_loop(min_mtime=cycle_start)
+                    elif mode_choice == '2':
+                        SKIP_DOWNLOAD = True
+                        run_predictions()
+                        run_rpa_loop(min_mtime=cycle_start)
+                    elif mode_choice == '3':
+                        SKIP_DOWNLOAD = True
+                        run_rpa_loop(min_mtime=None)
+                    else:
+                        print("Invalid mode chosen. Defaulting to Option 1 flow.")
+                        SKIP_DOWNLOAD = False
+                        run_downloads()
+                        run_predictions()
+                        run_rpa_loop(min_mtime=cycle_start)
+                        
+                    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
+                except KeyboardInterrupt:
+                    print("\nStopped by user (Ctrl+C). Exiting loop.")
+                    break
+                except Exception as e:
+                    print(f"\n[ERROR] Exception occurred in cycle: {e}")
+                    print("Retrying in the next cycle...")
                 
             next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
             print(f"Sleeping for {PERIODIC_INTERVAL_MINUTES} minutes. Next run at {next_run_time}...")
