@@ -1,14 +1,24 @@
 # Asignador - IT Incident and Requirement Assignment System
 
-Sistema automatizado de asignación de incidentes y requerimientos de TI utilizando Machine Learning y automatización RPA (Robotic Process Automation) para ServiceNow.
+Sistema automatizado de asignación de incidentes y requerimientos de TI utilizando Machine Learning (Supervisado, Semisupervisado y No Supervisado) y automatización RPA (Robotic Process Automation) para ServiceNow.
 
 ## Overview
 
-Este sistema utiliza modelos de Machine Learning supervisados y no supervisados para asignar automáticamente incidentes y requerimientos al personal adecuado basándose en el contenido y características de cada caso. Además, incluye herramientas de RPA E2E para interactuar directamente con ServiceNow en navegadores independientes sin interferir con la sesión de trabajo activa del usuario.
+Este sistema utiliza modelos de Machine Learning avanzados para asignar automáticamente incidentes y requerimientos al personal adecuado basándose en el contenido, características y carga de trabajo de cada caso. Además, incluye:
+- Herramientas de **RPA E2E (vía DOM DevTools y Coordenadas GUI)** para interactuar directamente con ServiceNow en navegadores independientes.
+- **Sistema de Registro y Logging de Ejecución (`ExecutionLogger`)** que captura salidas de consola y archiva ejecuciones previas por fecha.
+- **Reporte Acumulativo de Auditoría (`reporte_detalle_asignaciones.csv`)** para rastrear cada asignación realizada, preservando la asignación original.
+- **Utilidades de Limpieza de CSVs y Corrección de Formatos** con autodetección de formato de fecha corta del sistema operativo.
+
+---
 
 ## Features
 
-- **Machine Learning Models**: Modelos supervisados, semisupervisados y no supervisados para incidentes y requerimientos.
+- **Machine Learning Models**:
+  - Modelos **Supervisados** (SVM / Random Forest / Naive Bayes).
+  - Modelos **Semisupervisados** (Self-Training / Label Propagation).
+  - Modelos **No Supervisados** (Clustering / KMeans / TF-IDF).
+  - Inclusión de metadatos del modelo utilizado (`model_used`) y regla aplicada (`rule_applied`) en los reportes de salida.
 - **RPA E2E Orquestado**:
   - **Inyección DOM vía DevTools (`RPA_ServiceNow_DOM_E2E.py`)**: Inyección directa de JavaScript en la consola (Ctrl+Shift+J) combinada con PyAutoGUI para una asignación precisa e inmune a problemas de resolución de pantalla, zoom o adjuntos.
   - **Basado en Coordenadas de Pantalla (`RPA_ServiceNow_E2E.py`)**: Automatización basada en clics y atajos en pantalla.
@@ -18,15 +28,23 @@ Este sistema utiliza modelos de Machine Learning supervisados y no supervisados 
 - **Gestión de Pestañas y Modo Seguro DRY_RUN**:
   - Abre pestañas individuales por cada ticket a procesar.
   - **`DRY_RUN = True`**: Puebla y valida los campos pero mantiene las pestañas abiertas para revisión y guardado manual por parte del usuario.
-  - **`DRY_RUN = False`**: Guarda la actualización y cierra automáticamente la pestaña (`Ctrl+W`).
-  - No cierra la ventana del navegador ni pestañas con errores o procesos incompletos.
-- **Ventana Emergente de Notificación Pre-Inicio**:
-  - Alerta de 5 segundos mediante popup gráfico (`tkinter` topmost) antes de que el robot tome el control de la pantalla/teclado.
-  - Configurable mediante la constante `SHOW_NOTIFICATION_POPUP = True` / `NOTIFICATION_COUNTDOWN_SECONDS = 5`.
-  - Se muestra **una sola vez por ciclo de ejecución** para evitar interrupciones repetidas.
-- **Data Processing**: Limpieza, normalización y procesamiento automático de datos.
-- **Shift Validation**: Reglas automáticas para escenarios de turno (Operación TI, Batch, Monitoreo).
-- **Reports**: Generación automática de reportes de carga de trabajo y resúmenes.
+  - **`DRY_RUN = False`**: Guarda la actualización y al finalizar el ciclo completo cierra la ventana independiente mediante `Alt+F4` (`CLOSE_BROWSER_AT_END = True`).
+- **Ejecución Continua y Reintento (Modo Periódico y Daemon)**:
+  - Bucle de automatización autónomo con intervalos personalizables (ej. cada 30 o 60 minutos).
+  - Pausas reactivas a `Ctrl+C` en bloques de 5 segundos.
+- **Sistema de Logging por Ejecución (`ExecutionLogger`)**:
+  - Captura estándar de `stdout` y `stderr` hacia la consola y archivos `.log` fechados.
+  - Archivamiento automático de ejecuciones y logs anteriores hacia carpetas `Salida/YYYY-MM-DD/`.
+  - Soporte de entorno `DISABLE_EXECUTION_LOGGER=1` para evitar logs duplicados durante ejecuciones orquestadas.
+- **Limpieza de Datos y Formato de Fecha OS (`CleaningData.py`)**:
+  - Corrección de registros CSV multilinea encerrados en comillas dobles (saltos de línea internos).
+  - Detección automática del formato de fecha corta de Windows (`sShortDate` vía Registro de Windows).
+- **Reporte Acumulativo de Asignaciones**:
+  - Histórico persistente en `Salida/reporte_detalle_asignaciones.csv` con registro de asignación previa (`original_assigned_to`), asignada (`predicted_assigned_to`), fecha/hora y modelo/regla aplicada.
+- **Validación de Turnos y Balanceo de Carga**:
+  - Asignación automática por horarios de turno (`Turnos.csv`) para Operación TI, Batch y Monitoreo.
+
+---
 
 ## Architecture
 
@@ -37,7 +55,7 @@ Asignador/
 ├── RPA_ServiceNow_DOM_E2E.py   # Orquestador RPA E2E mediante inyección JavaScript DOM (Recomendado)
 ├── RPA_ServiceNow_E2E.py       # Orquestador RPA E2E mediante coordenadas de pantalla
 ├── Programas/
-│   ├── CleaningData.py         # Funciones de limpieza de datos y nombrado según SO
+│   ├── CleaningData.py         # Utilidades de logging (ExecutionLogger), limpieza CSV y fecha OS
 │   ├── Trainer.py              # Entrenamiento de modelos (Supervisados y No supervisados)
 │   ├── LoadBalancer.py         # Balanceador de carga de trabajo y lógica de turnos
 │   ├── GroupWorkloadReport.py  # Generador de reportes de carga de grupos
@@ -54,8 +72,10 @@ Asignador/
 │   └── unsupervised_model/     # Modelos no supervisados (clusters) para requerimientos
 ├── Entrada/                    # Archivos de entrada (incident.csv, sc_req_item.csv e histórico por fecha)
 ├── Especificaciones/           # Parámetros (Grupos, Usuarios, Turnos, rpa_config_parameters.json)
-└── Salida/                     # Reportes y CSVs finales de asignación generados
+└── Salida/                     # CSVs finales, reporte acumulativo (reporte_detalle_asignaciones.csv) y logs
 ```
+
+---
 
 ## Installation
 
@@ -77,6 +97,8 @@ Asignador/
    ```bash
    pip install pandas scikit-learn joblib pyautogui pyperclip nltk matplotlib seaborn imbalanced-learn
    ```
+
+---
 
 ## Usage
 
@@ -107,7 +129,7 @@ py RPA_ServiceNow_DOM_E2E.py
 3. **Solo REQUERIMIENTOS**: Ejecutar Predicciones y Actualizar DOM.
 4. **Solo REQUERIMIENTOS**: Solo Actualizar DOM (usando la última predicción en `Salida/`).
 5. **Ejecución Completa**: Procesa Incidentes y Requerimientos de inicio a fin.
-6. **Ejecución Completa Periódica**: Modo bucle daemon que repite la automatización según un intervalo en minutos.
+6. **Ejecución Completa Periódica**: Modo bucle daemon que repite la automatización según un intervalo en minutos (ej. 30 min).
 7. **Salir**.
 
 ### 4. Ejecutar Orquestador RPA ServiceNow (Modo Coordenadas de Pantalla)
@@ -118,6 +140,29 @@ py RPA_ServiceNow_E2E.py
 ---
 
 ## Configuration & Feature Details
+
+### Sistema de Logging y Registro (`ExecutionLogger`)
+- Implementado en `Programas/CleaningData.py`.
+- Genera automáticamente un archivo `.log` con marca de tiempo en `Salida/` (ej. `ejecucion_dom_periodica_2026-08-27_17-00-00.log`).
+- Mantiene duplicación de stream (`TeeStream`) para reflejar la salida simultáneamente en la consola y en el archivo log.
+- En ejecuciones orquestadas, la variable `DISABLE_EXECUTION_LOGGER=1` evita la creación de logs fragmentados en los subprocesos de predicción.
+
+### Reporte Acumulativo de Detalle de Asignaciones
+- Archivo centralizado: `Salida/reporte_detalle_asignaciones.csv`.
+- Registra de forma acumulativa cada ticket procesado con las siguientes columnas:
+  - `ticket_id`: Número de incidente (INC) o requerimiento (RITM).
+  - `ticket_type`: Categoría ('incidentes' o 'requerimientos').
+  - `short_description`: Descripción corta del ticket.
+  - `original_assigned_to`: Usuario asignado previamente antes del proceso.
+  - `predicted_assigned_to`: Usuario asignado por el sistema.
+  - `rule_applied`: Regla de negocio aplicada (ej. 'Turno Monitoreo', 'Model Prediction', 'Load Balancer').
+  - `model_used`: Nombre o tipo del modelo de ML utilizado.
+  - `assigned_at`: Fecha y hora de procesamiento.
+
+### Limpieza de Datos y Formato de Fecha OS (`CleaningData.py`)
+- **Archivamiento Automático**: `archive_previous_files()` mueve archivos `.csv`, `.txt` y `.log` anteriores de la raíz de `Salida/` o `Entrada/` hacia subcarpetas organizadas por fecha (`Salida/YYYY-MM-DD/`).
+- **Corrección CSV**: Elimina saltos de línea internos en campos de texto delimitados por comillas (`fix_newlines_inside_quotes`) y estandariza separadores (`replace_commas_outside_quotes`).
+- **Formato de Fecha de Windows**: La función `get_windows_date_format()` lee la clave de registro `Control Panel\International\sShortDate` de Windows para adaptar dinámicamente las conversiones `strftime` al formato regional del sistema operativo.
 
 ### Navegador Independiente y Priorización Edge
 - Al iniciar el flujo de descarga o actualización de tickets, el sistema busca ejecutables instalados en el sistema:
@@ -130,36 +175,21 @@ py RPA_ServiceNow_E2E.py
 - Definida por las constantes:
   - `SHOW_NOTIFICATION_POPUP = True`
   - `NOTIFICATION_COUNTDOWN_SECONDS = 5`
-- 5 segundos antes de tomar el control del mouse/teclado, el sistema muestra una ventana centrada en pantalla siempre visible (`-topmost`) con un temporizador regresivo de 5 a 1 segundos para que el usuario pueda liberar el control de la pantalla.
-- Se ejecuta **una sola vez por ciclo de ejecución** (evitando avisos duplicados en subfases).
+- 5 segundos antes de tomar el control del mouse/teclado, el sistema muestra una ventana centrada en pantalla siempre visible (`-topmost`) con un temporizador regresivo para alertar al usuario.
+- Se ejecuta **una sola vez por ciclo de ejecución**.
 
 ### Modo DRY_RUN y Reglas de Pestañas
 - Definido en el script mediante `DRY_RUN = True` (o `False`).
-- **Pestañas e Iteraciones**:
-  - **Sin `Ctrl+W`**: No se cierra ninguna pestaña individual durante el procesamiento de los tickets. Todas las pestañas creadas durante el ciclo permanecen abiertas.
-  - `DRY_RUN = True`: Al finalizar la iteración completa, la ventana del navegador y todas sus pestañas abiertas **se mantienen abiertas** para permitir la inspección visual y guardado manual.
-  - `DRY_RUN = False` (con `CLOSE_BROWSER_AT_END = True`): Al finalizar **toda la iteración del ciclo**, el sistema espera un tiempo personalizable (`CLOSE_BROWSER_WAIT_TIME = 10.0` segundos por defecto) y cierra la ventana independiente del navegador completa usando **`Alt+F4`**.
+- `DRY_RUN = True`: Mantiene las pestañas abiertas para revisión y guardado manual.
+- `DRY_RUN = False` (con `CLOSE_BROWSER_AT_END = True`): Al finalizar toda la iteración del ciclo, el sistema espera un tiempo personalizable (`CLOSE_BROWSER_WAIT_TIME = 10.0` s) y cierra la ventana independiente del navegador completa usando **`Alt+F4`**.
 
 ### Validaciones de Turno y Carga de Trabajo
-El sistema aplica reglas automáticas para derivar incidentes específicos al personal en guardia/turno:
+El sistema aplica reglas automáticas para derivar incidentes específicos al personal en guardia/turno según `Especificaciones/Turnos.csv`:
 - **Operación TI**: Categoría "Operación TI".
 - **Batch**: Subcategoría "Batch" o clasificado/predicho como "reportes batch" o "trickle feed".
 - **Monitoreo**: Medio de contacto (`contact_type`) es "Monitoreo".
 
-#### Cuadrante de Turnos (`Turnos.csv`)
-Cuando un ticket es clasificado como de turno, el balanceador de carga (`Programas/LoadBalancer.py`) consulta `Especificaciones/Turnos.csv` para asignar automáticamente el ticket al usuario correspondiente según el horario:
-- **Lunes a Viernes:**
-  - `06:00:00` a `13:59:59` -> **Turno 1**
-  - `14:00:00` a `21:59:59` -> **Turno 2**
-  - `22:00:00` a `05:59:59` (del día siguiente) -> **Turno 3**
-- **Sábado:**
-  - `00:00:00` a `05:59:59` -> **Turno 3** (guardia del viernes)
-  - `06:00:00` a `13:59:59` -> **Turno 4**
-  - `14:00:00` a `23:59:59` -> **Stand-by**
-- **Domingo:**
-  - Todo el día -> **Stand-by**
-- **Lunes temprano:**
-  - `00:00:00` a `05:59:59` -> **Stand-by** (guardia del domingo)
+---
 
 ## Data Format
 
@@ -177,7 +207,11 @@ Cuando un ticket es clasificado como de turno, el balanceador de carga (`Program
 ### Archivos de Salida (`Salida/`)
 - `Salida/incidentes_con_asignacion_{timestamp}.csv` - Incidentes clasificados con asignaciones y sys_id.
 - `Salida/requerimientos_con_asignacion_{timestamp}.csv` - Requerimientos clasificados con estado 'En proceso', fecha prevista de resolución e información de CMDB.
+- `Salida/reporte_detalle_asignaciones.csv` - Reporte acumulativo histórico de detalles de asignación.
 - `Salida/resumen_asignaciones_{timestamp}.txt` - Resumen y estadísticas de distribución final de carga.
+- `Salida/ejecucion_{prefix}_{timestamp}.log` - Logs detallados por cada ciclo de ejecución.
+
+---
 
 ## License
 

@@ -397,7 +397,8 @@ def run_downloads(download_incidents=True, download_requirements=True):
 
 def run_subprocess_logged(cmd, cwd=None):
     """Ejecuta un subproceso transmitiendo stdout/stderr a sys.stdout en tiempo real."""
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    env_vars = {**os.environ, "DISABLE_EXECUTION_LOGGER": "1"}
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd, env=env_vars)
     for line in process.stdout:
         sys.stdout.write(line)
         sys.stdout.flush()
@@ -858,17 +859,17 @@ def main():
                     print(f"\n[ERROR] Ocurrió una excepción en el ciclo: {e}")
                     print("Reintentando en el siguiente ciclo...")
                 
-            next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
-            print(f"Esperando {interval_mins} minutos. Siguiente ejecución a las {next_run_time}...")
-            
-            sleep_left = interval_secs
-            try:
-                while sleep_left > 0:
-                    time.sleep(min(5, sleep_left))
-                    sleep_left -= 5
-            except KeyboardInterrupt:
-                print("\nAutomatización detenida por el usuario (Ctrl+C). Saliendo del ciclo.")
-                break
+                next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
+                print(f"Esperando {interval_mins} minutos. Siguiente ejecución a las {next_run_time}...")
+                
+                sleep_left = interval_secs
+                try:
+                    while sleep_left > 0:
+                        time.sleep(min(5, sleep_left))
+                        sleep_left -= 5
+                except KeyboardInterrupt:
+                    print("\nAutomatización detenida por el usuario (Ctrl+C). Saliendo del ciclo.")
+                    break
     elif choice == '7':
         print("Saliendo...")
         sys.exit(0)

@@ -492,8 +492,8 @@ def main():
 
 
 if __name__ == "__main__":
-    import sys
-    if hasattr(sys.stdout, 'log_file'):
+    import os, sys
+    if hasattr(sys.stdout, 'log_file') or os.environ.get("DISABLE_EXECUTION_LOGGER") == "1":
         main()
     else:
         with ExecutionLogger("Salida", prefix="ejecucion_requirements"):

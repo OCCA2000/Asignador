@@ -495,7 +495,8 @@ def run_downloads():
 
 def run_subprocess_logged(cmd, cwd=None):
     """Ejecuta un subproceso transmitiendo stdout/stderr a sys.stdout en tiempo real."""
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    env_vars = {**os.environ, "DISABLE_EXECUTION_LOGGER": "1"}
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd, env=env_vars)
     for line in process.stdout:
         sys.stdout.write(line)
         sys.stdout.flush()
@@ -808,18 +809,18 @@ def run_daemon_mode():
                 print(f"\n[ERROR] Exception occurred in daemon cycle: {e}")
                 print("Retrying in the next cycle...")
             
-        next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
-        print(f"Sleeping for {interval_mins} minutes. Next run at {next_run_time}...")
-        
-        # Pausar en incrementos de 5 segundos para mantener respuesta a interrupciones Ctrl+C
-        sleep_left = interval_secs
-        try:
-            while sleep_left > 0:
-                time.sleep(min(5, sleep_left))
-                sleep_left -= 5
-        except KeyboardInterrupt:
-            print("\nDaemon stopped by user (Ctrl+C). Exiting.")
-            break
+            next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
+            print(f"Sleeping for {interval_mins} minutes. Next run at {next_run_time}...")
+            
+            # Pausar en incrementos de 5 segundos para mantener respuesta a interrupciones Ctrl+C
+            sleep_left = interval_secs
+            try:
+                while sleep_left > 0:
+                    time.sleep(min(5, sleep_left))
+                    sleep_left -= 5
+            except KeyboardInterrupt:
+                print("\nDaemon stopped by user (Ctrl+C). Exiting.")
+                break
 
 # ==========================================
 # MAIN INTERFACE
@@ -930,17 +931,17 @@ def main():
                     print(f"\n[ERROR] Exception occurred in cycle: {e}")
                     print("Retrying in the next cycle...")
                 
-            next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
-            print(f"Sleeping for {PERIODIC_INTERVAL_MINUTES} minutes. Next run at {next_run_time}...")
-            
-            sleep_left = interval_secs
-            try:
-                while sleep_left > 0:
-                    time.sleep(min(5, sleep_left))
-                    sleep_left -= 5
-            except KeyboardInterrupt:
-                print("\nStopped by user (Ctrl+C). Exiting.")
-                break
+                next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
+                print(f"Sleeping for {PERIODIC_INTERVAL_MINUTES} minutes. Next run at {next_run_time}...")
+                
+                sleep_left = interval_secs
+                try:
+                    while sleep_left > 0:
+                        time.sleep(min(5, sleep_left))
+                        sleep_left -= 5
+                except KeyboardInterrupt:
+                    print("\nStopped by user (Ctrl+C). Exiting.")
+                    break
         
     elif choice == '7':
         print("Exiting. Have a great day!")
