@@ -188,89 +188,184 @@ def calculate_resolution_date(opened_at_str):
 
 # ── Predicción y asignación ──────────────────────────────────────────────────────
 
-def predict_requirement_assignments(df_requirements, balancer):
-    """Clasifica requerimientos y los asigna utilizando el modelo supervisado entrenado."""
-    print("Predicting requirement assignments using supervisado model...")
+def predict_requirement_assignments(df_requirements, balancer, model_type='supervised'):
+    """Clasifica requerimientos y los asigna utilizando modelos entrenados."""
+    print(f"Predicting requirement assignments using {model_type} model...")
 
-    try:
-        # Cargar modelo y vectorizer
-        model_path      = "Requerimientos/supervised_model/modelo_Requerimientos.joblib"
-        vectorizer_path = "Requerimientos/supervised_model/vectorizer_Requerimientos.joblib"
+    model_path = f"Requerimientos/{model_type}_model"
 
-        if not os.path.exists(model_path) or not os.path.exists(vectorizer_path):
-            print("Error: no se encontraron los archivos del modelo en Modelos/. Ejecuta Supervisado_Requerimientos.ipynb primero.")
+    if model_type == 'supervised':
+        try:
+            # Cargar modelo supervisado y vectorizer
+            model_file      = f"{model_path}/modelo_Requerimientos.joblib"
+            vectorizer_file = f"{model_path}/vectorizer_Requerimientos.joblib"
+
+            if not os.path.exists(model_file) or not os.path.exists(vectorizer_file):
+                print(f"Error: no se encontraron los archivos del modelo en {model_path}. Ejecuta Supervisado_Requerimientos.ipynb primero.")
+                return df_requirements
+
+            model      = joblib.load(model_file)
+            vectorizer = joblib.load(vectorizer_file)
+            print(f"Model:      {model_file}")
+            print(f"Vectorizer: {vectorizer_file}")
+
+            print("Normalizing text...")
+            df_requirements['short_norm'] = df_requirements['short_description'].apply(_normalize_text_req)
+            df_requirements['desc_norm'] = df_requirements['description'].apply(_normalize_text_req)
+
+            df_requirements['short_core'] = df_requirements['short_norm'].apply(_strip_boilerplate)
+            df_requirements['desc_core']  = df_requirements['desc_norm'].apply(_strip_boilerplate)
+
+            df_requirements['texto_limpio'] = df_requirements.apply(_build_final_text, axis=1)
+
+            empty_text_count = (df_requirements['texto_limpio'] == '').sum()
+            print(f"Tickets with valid text: {len(df_requirements) - empty_text_count} / {len(df_requirements)}")
+
+            # Predicción
+            X = vectorizer.transform(df_requirements['texto_limpio'])
+            df_requirements['Clasificación'] = model.predict(X)
+
+            # Tickets sin texto -> 'revision'
+            empty_text_mask = df_requirements['texto_limpio'] == ''
+            df_requirements.loc[empty_text_mask, 'Clasificación'] = 'revision'
+
+            print(f"\n{'='*55}")
+            print(f"  MODELO: Supervisado")
+            print(f"  Tickets procesados : {len(df_requirements)}")
+            print(f"  Features TF-IDF    : {X.shape[1]}")
+            print(f"{'='*55}")
+
+            print("\n[Clasificación predicha por el modelo]\n")
+            id_col = next((c for c in ['number', 'Number', 'id'] if c in df_requirements.columns), None)
+            for _, row in df_requirements.iterrows():
+                ticket_id       = row[id_col] if id_col else "—"
+                desc            = str(row.get('short_description', ''))[:60]
+                predicted_class = row['Clasificación']
+                print(f"  {ticket_id}  |  {predicted_class:<40}  |  {desc}")
+
+            print(f"\n[Distribución de clases predichas]")
+            for predicted_class, count in df_requirements['Clasificación'].value_counts().items():
+                print(f"  {predicted_class:<42} {count} ticket(s)")
+            print()
+
+            # Fecha de resolución (solo si opened_at está presente)
+            if 'opened_at' in df_requirements.columns:
+                random.seed(42)
+                df_requirements['fecha_resolucion'] = df_requirements['opened_at'].apply(
+                    calculate_resolution_date
+                )
+                print("[Fecha de resolución calculada a partir de opened_at]")
+
+            # Balanceo de carga
+            df_requirements = balancer.balance_assignment(df_requirements, assigned_col="predicted_assigned_to")
+
+            if 'predicted_assigned_to' in df_requirements.columns:
+                print(f"\n[Asignación final tras balanceo]")
+                cols = [c for c in [id_col, 'Clasificación', 'predicted_assigned_to'] if c]
+                print(df_requirements[cols].to_string(index=False))
+
+            # Alinear nombres de columnas para generate_assignment_reports / main()
+            df_requirements['predicted_assignment_group'] = df_requirements['Clasificación']
+
             return df_requirements
 
-        model      = joblib.load(model_path)
-        vectorizer = joblib.load(vectorizer_path)
-        print(f"Model:      {model_path}")
-        print(f"Vectorizer: {vectorizer_path}")
+        except Exception as e:
+            print(f"Error in supervised prediction: {e}")
+            import traceback
+            traceback.print_exc()
+            return df_requirements
 
-        print("Normalizing text...")
-        df_requirements['short_norm'] = df_requirements['short_description'].apply(_normalize_text_req)
-        df_requirements['desc_norm'] = df_requirements['description'].apply(_normalize_text_req)
+    elif model_type == 'semisupervised':
+        try:
+            import re, unicodedata
+            import nltk
+            from nltk.corpus import stopwords as nltk_stopwords
 
-        df_requirements['short_core'] = df_requirements['short_norm'].apply(_strip_boilerplate)
-        df_requirements['desc_core']  = df_requirements['desc_norm'].apply(_strip_boilerplate)
+            model_file      = f"{model_path}/modelo_Logistic_Regression.joblib"
+            vectorizer_file = f"{model_path}/vectorizer_tfidf.joblib"
 
-        df_requirements['texto_limpio'] = df_requirements.apply(_build_final_text, axis=1)
+            if not os.path.exists(model_file) or not os.path.exists(vectorizer_file):
+                print(f"Error: no se encontraron los archivos del modelo en {model_path}.")
+                return df_requirements
 
-        empty_text_count = (df_requirements['texto_limpio'] == '').sum()
-        print(f"Tickets with valid text: {len(df_requirements) - empty_text_count} / {len(df_requirements)}")
+            model      = joblib.load(model_file)
+            vectorizer = joblib.load(vectorizer_file)
+            print(f"Model:      {model_file}")
+            print(f"Vectorizer: {vectorizer_file}")
 
-        # Predicción
-        X = vectorizer.transform(df_requirements['texto_limpio'])
-        df_requirements['Clasificación'] = model.predict(X)
+            nltk.download('stopwords', quiet=True)
+            spanish_stopwords = set(nltk_stopwords.words('spanish'))
 
-        # Tickets sin texto -> 'revision'
-        empty_text_mask = df_requirements['texto_limpio'] == ''
-        df_requirements.loc[empty_text_mask, 'Clasificación'] = 'revision'
+            def clean_text(text):
+                if pd.isnull(text):
+                    return ""
+                text = str(text).lower()
+                text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
+                text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
+                text = re.sub(r'\b\d+\b', ' ', text)
+                text = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', text)
+                text = re.sub(r'\b\w{1,2}\b', ' ', text)
+                text = re.sub(r'\s+', ' ', text).strip()
+                tokens = [t for t in text.split() if t not in spanish_stopwords]
+                return ' '.join(tokens)
 
-        print(f"\n{'='*55}")
-        print(f"  MODELO: Supervisado")
-        print(f"  Tickets procesados : {len(df_requirements)}")
-        print(f"  Features TF-IDF    : {X.shape[1]}")
-        print(f"{'='*55}")
-
-        print("\n[Clasificación predicha por el modelo]\n")
-        id_col = next((c for c in ['number', 'Number', 'id'] if c in df_requirements.columns), None)
-        for _, row in df_requirements.iterrows():
-            ticket_id       = row[id_col] if id_col else "—"
-            desc            = str(row.get('short_description', ''))[:60]
-            predicted_class = row['Clasificación']
-            print(f"  {ticket_id}  |  {predicted_class:<40}  |  {desc}")
-
-        print(f"\n[Distribución de clases predichas]")
-        for predicted_class, count in df_requirements['Clasificación'].value_counts().items():
-            print(f"  {predicted_class:<42} {count} ticket(s)")
-        print()
-
-        # Fecha de resolución (solo si opened_at está presente)
-        if 'opened_at' in df_requirements.columns:
-            random.seed(42)
-            df_requirements['fecha_resolucion'] = df_requirements['opened_at'].apply(
-                calculate_resolution_date
+            # Construir texto_unificado con las columnas correspondientes
+            df_requirements['texto_unificado'] = (
+                df_requirements['short_description'].fillna('') + ' ' +
+                df_requirements['description'].fillna('')
             )
-            print("[Fecha de resolución calculada a partir de opened_at]")
+            df_requirements['texto_unificado'] = df_requirements['texto_unificado'].apply(clean_text)
 
-        # Balanceo de carga
-        df_requirements = balancer.balance_assignment(df_requirements, assigned_col="predicted_assigned_to")
+            X = vectorizer.transform(df_requirements['texto_unificado'])
+            df_requirements['Clasificación'] = model.predict(X)
 
-        if 'predicted_assigned_to' in df_requirements.columns:
-            print(f"\n[Asignación final tras balanceo]")
-            cols = [c for c in [id_col, 'Clasificación', 'predicted_assigned_to'] if c]
-            print(df_requirements[cols].to_string(index=False))
+            print(f"\n{'='*55}")
+            print(f"  MODELO: Logistic Regression (semi-supervisado)")
+            print(f"  Tickets procesados : {len(df_requirements)}")
+            print(f"  Features TF-IDF    : {X.shape[1]}")
+            print(f"{'='*55}")
 
-        # Alinear nombres de columnas para generate_assignment_reports / main()
-        df_requirements['predicted_assignment_group'] = df_requirements['Clasificación']
+            print("\n[Clasificación predicha por el modelo]\n")
+            id_col = next((c for c in ['number', 'Number', 'id'] if c in df_requirements.columns), None)
+            for _, row in df_requirements.iterrows():
+                ticket_id = row[id_col] if id_col else "—"
+                desc = str(row.get('short_description', ''))[:60]
+                predicted_class = row['Clasificación']
+                text = str(row.get('texto_unificado', ''))[:50]
+                print(f"  {ticket_id}  |  {predicted_class:<40}  |  {desc}")
+                print(f"  {'':^10}     texto: {text}")
 
-        return df_requirements
+            print(f"\n[Distribución de clases predichas]")
+            for predicted_class, count in df_requirements['Clasificación'].value_counts().items():
+                print(f"  {predicted_class:<42} {count} ticket(s)")
+            print()
 
-    except Exception as e:
-        print(f"Error in prediction: {e}")
-        import traceback
-        traceback.print_exc()
-        return df_requirements
+            # Fecha de resolución (solo si opened_at está presente)
+            if 'opened_at' in df_requirements.columns:
+                random.seed(42)
+                df_requirements['fecha_resolucion'] = df_requirements['opened_at'].apply(
+                    calculate_resolution_date
+                )
+                print("[Fecha de resolución calculada a partir de opened_at]")
+
+            # Balanceo de carga
+            df_requirements = balancer.balance_assignment(df_requirements, assigned_col="predicted_assigned_to")
+
+            if 'predicted_assigned_to' in df_requirements.columns:
+                print(f"\n[Asignación final tras balanceo]")
+                cols = [c for c in [id_col, 'Clasificación', 'predicted_assigned_to'] if c]
+                print(df_requirements[cols].to_string(index=False))
+
+            # Alinear nombres de columnas para generate_assignment_reports / main()
+            df_requirements['predicted_assignment_group'] = df_requirements['Clasificación']
+
+            return df_requirements
+
+        except Exception as e:
+            print(f"Error in semisupervised prediction: {e}")
+            import traceback
+            traceback.print_exc()
+            return df_requirements
 
 
 # ── Reportes ─────────────────────────────────────────────────────────────────────
@@ -367,7 +462,7 @@ def main():
     )
 
     print("Making assignment predictions for requirements...")
-    df_requirements = predict_requirement_assignments(df_requirements, balancer)
+    df_requirements = predict_requirement_assignments(df_requirements, balancer, model_type='semisupervised')
 
     generate_assignment_reports(df_requirements, timing, balancer)
 
