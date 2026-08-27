@@ -4,6 +4,7 @@ import shutil
 import sys
 import traceback
 from datetime import datetime
+import pandas as pd
 
 
 def fix_newlines_inside_quotes(text: str, replacement: str = " ") -> str:
@@ -85,12 +86,17 @@ def replace_commas_outside_quotes(text: str, to_separator: str = ';') -> str:
     return ''.join(result)
 
 
-def archive_previous_files(base_dir: str, pattern: str):
+def archive_previous_files(base_dir: str, pattern: str, exclude_files: list = None):
     """
     Mueve los archivos que coincidan con 'pattern' en la raíz de 'base_dir' hacia subcarpetas de fecha 'base_dir/YYYY-MM-DD/'.
     """
     if not os.path.exists(base_dir):
         return
+
+    if exclude_files is None:
+        exclude_files = ["reporte_detalle_asignaciones.csv"]
+    elif "reporte_detalle_asignaciones.csv" not in exclude_files:
+        exclude_files.append("reporte_detalle_asignaciones.csv")
 
     active_log_path = None
     if hasattr(sys.stdout, 'log_file') and getattr(sys.stdout, 'log_file', None):
@@ -102,9 +108,11 @@ def archive_previous_files(base_dir: str, pattern: str):
     search_path = os.path.join(base_dir, pattern)
     target_files = [f for f in glob.glob(search_path) if os.path.isfile(f)]
     for filepath in target_files:
+        filename = os.path.basename(filepath)
+        if filename in exclude_files:
+            continue
         if active_log_path and os.path.abspath(filepath) == active_log_path:
             continue  # Omitir el archivo de log actualmente en uso
-        filename = os.path.basename(filepath)
         mtime = os.path.getmtime(filepath)
         date_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
         target_dir = os.path.join(base_dir, date_str)
@@ -305,4 +313,109 @@ class ExecutionLogger:
             traceback.print_exception(exc_type, exc_val, exc_tb, file=sys.stderr)
         self.stop()
         return False
+
+
+def generate_assignation_detail_report(df: pd.DataFrame, ticket_type: str, timing: str = None, base_dir: str = "Salida") -> str:
+    """
+    Genera o anexa registros al reporte acumulativo final 'Salida/reporte_detalle_asignaciones.csv'.
+    Mantiene 7 columnas exactas:
+    Ticket identification;Ticket type;Assignation timestamp;Description;Predicted group;Previous person assigned;Person assigned;Predicted end date
+    """
+    if df is None or len(df) == 0:
+        return ""
+
+    os.makedirs(base_dir, exist_ok=True)
+    report_path = os.path.join(base_dir, "reporte_detalle_asignaciones.csv")
+
+    win_fmt = get_windows_date_format()
+    dt_fmt = f"{win_fmt} %H:%M:%S"
+    now_str = datetime.now().strftime(dt_fmt)
+
+    # 1. Ticket identification
+    num_col = next((c for c in ['number', 'Number', 'id', 'ticket_id'] if c in df.columns), None)
+    if not num_col:
+        print(f"Advertencia: No se encontró columna de identificación de ticket en df de {ticket_type}.")
+        return ""
+
+    # 2. Description
+    desc_series = pd.Series([""] * len(df))
+    for desc_col in ['description', 'Description', 'short_description', 'Short description', 'u_description', 'desc_core', 'texto_limpio']:
+        if desc_col in df.columns:
+            desc_series = df[desc_col]
+            break
+
+    # 3. Predicted group
+    predicted_group_series = df.get('predicted_assignment_group', df.get('assignment_group', df.get('Clasificación', pd.Series([""] * len(df)))))
+
+    # 4. Previous person assigned
+    if 'original_assigned_to' in df.columns:
+        prev_assigned_series = df['original_assigned_to']
+    elif 'assigned_to' in df.columns and 'predicted_assigned_to' in df.columns:
+        prev_assigned_series = df['assigned_to']
+    else:
+        prev_assigned_series = df.get('assigned_to', pd.Series([""] * len(df)))
+
+    # 5. Person assigned
+    person_assigned_series = df.get('predicted_assigned_to', df.get('assigned_to', pd.Series([""] * len(df))))
+
+    # 6. Predicted end date
+    end_date_series = pd.Series([""] * len(df))
+    for col_candidate in ['u_fecha_limite', 'fecha_resolucion', 'due_date', 'predicted_end_date']:
+        if col_candidate in df.columns:
+            end_date_series = df[col_candidate]
+            break
+
+    def clean_empty(val):
+        if pd.isna(val) or val is None:
+            return ""
+        s = str(val).strip()
+        if s.lower() in ('nan', 'none', 'null'):
+            return ""
+        return s
+
+    def clean_text_field(val):
+        s = clean_empty(val)
+        if not s:
+            return ""
+        # Reemplazar saltos de línea y tabulaciones para preservar formato CSV limpio
+        s = s.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+        return ' '.join(s.split())
+
+    def format_date_val(val):
+        clean_val = clean_empty(val)
+        if not clean_val:
+            return ""
+        formats_to_try = (
+            dt_fmt,
+            win_fmt,
+            '%Y-%m-%d %H:%M:%S',
+            '%d/%m/%Y %H:%M:%S',
+            '%Y-%m-%d %H:%M:%S.%f',
+            '%Y-%m-%d',
+            '%d/%m/%Y'
+        )
+        for fmt in formats_to_try:
+            try:
+                dt = datetime.strptime(clean_val, fmt)
+                return dt.strftime(dt_fmt)
+            except ValueError:
+                continue
+        return clean_val
+
+    report_df = pd.DataFrame()
+    report_df['Ticket identification'] = df[num_col].apply(clean_empty)
+    report_df['Ticket type'] = ticket_type
+    report_df['Assignation timestamp'] = now_str
+    report_df['Description'] = desc_series.apply(clean_text_field)
+    report_df['Predicted group'] = predicted_group_series.apply(clean_empty)
+    report_df['Previous person assigned'] = prev_assigned_series.apply(clean_empty)
+    report_df['Person assigned'] = person_assigned_series.apply(clean_empty)
+    report_df['Predicted end date'] = end_date_series.apply(format_date_val)
+
+    # Verificar si el archivo ya existe y tiene contenido
+    file_exists = os.path.exists(report_path) and os.path.getsize(report_path) > 0
+
+    report_df.to_csv(report_path, mode='a', sep=';', index=False, header=not file_exists, encoding='utf-8-sig')
+    print(f"Reporte detallado acumulativo actualizado en: {report_path}")
+    return report_path
 

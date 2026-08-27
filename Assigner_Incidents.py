@@ -1,4 +1,4 @@
-from Programas.CleaningData import clean_csv_file, get_output_path_date, ExecutionLogger
+from Programas.CleaningData import clean_csv_file, get_output_path_date, ExecutionLogger, generate_assignation_detail_report
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime
 import glob
@@ -185,6 +185,12 @@ def generate_assignment_reports(df_incidents, timing, balancer=None):
         df_incidents.to_csv(incident_output, sep=';', index=False, encoding='latin-1')
         print(f"Incident assignments saved to: {incident_output}")
     
+    # Generar reporte acumulativo consolidado
+    try:
+        generate_assignation_detail_report(df_incidents, "Incidente", timing)
+    except Exception as e:
+        print(f"Error generando reporte acumulativo de asignaciones: {e}")
+
     # Generar reporte de resumen
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.write(f"Incident Assignment Summary - {timing}\n")
@@ -228,6 +234,10 @@ def load_and_clean_data():
     # Cargar datos limpios
     df_incidents = pd.read_csv(output_path, sep=';', dtype=str, engine='python',
                      on_bad_lines='skip', encoding='latin-1')
+    
+    # Preservar el valor asignado previo original antes de predecir
+    if 'assigned_to' in df_incidents.columns:
+        df_incidents['original_assigned_to'] = df_incidents['assigned_to']
     
     print(f"Loaded {len(df_incidents)} incidents")
     

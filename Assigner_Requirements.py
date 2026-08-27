@@ -1,4 +1,4 @@
-from Programas.CleaningData import clean_csv_file, get_output_path_date, get_windows_date_format, ExecutionLogger
+from Programas.CleaningData import clean_csv_file, get_output_path_date, get_windows_date_format, ExecutionLogger, generate_assignation_detail_report
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -285,9 +285,15 @@ def generate_assignment_reports(df_requirements, timing, balancer=None):
 
     if "predicted_assigned_to" in df_requirements.columns:
         output_cols = [c for c in df_requirements.columns if not c.endswith('_norm')
-                       and c not in ('short_core', 'desc_core', 'texto_limpio')]
+                       and c not in ('short_core', 'desc_core', 'texto_limpio', 'original_assigned_to')]
         df_requirements[output_cols].to_csv(output_path, sep=';', index=False, encoding='latin-1')
         print(f"Requirement assignments saved to: {output_path}")
+
+    # Generar reporte acumulativo consolidado
+    try:
+        generate_assignation_detail_report(df_requirements, "Requerimiento", timing)
+    except Exception as e:
+        print(f"Error generando reporte acumulativo de asignaciones: {e}")
 
     with open(summary_path, 'w', encoding='utf-8') as f:
         f.write(f"Requirement Assignment Summary - {timing}\n")
@@ -334,6 +340,10 @@ def load_and_clean_data():
         output_path,
         sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1'
     )
+
+    # Preservar el valor asignado previo original antes de predecir
+    if 'assigned_to' in df_requirements.columns:
+        df_requirements['original_assigned_to'] = df_requirements['assigned_to']
 
     print(f"Loaded {len(df_requirements)} requirements")
 
