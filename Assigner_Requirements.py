@@ -224,6 +224,8 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
             # Predicción
             X = vectorizer.transform(df_requirements['texto_limpio'])
             df_requirements['Clasificación'] = model.predict(X)
+            df_requirements["prediction_model_type"] = "supervised"
+            df_requirements["prediction_model_name"] = "modelo_Requerimientos.joblib"
 
             # Tickets sin texto -> 'revision'
             empty_text_mask = df_requirements['texto_limpio'] == ''
@@ -318,6 +320,8 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
 
             X = vectorizer.transform(df_requirements['texto_unificado'])
             df_requirements['Clasificación'] = model.predict(X)
+            df_requirements["prediction_model_type"] = "semisupervised"
+            df_requirements["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
 
             print(f"\n{'='*55}")
             print(f"  MODELO: Logistic Regression (semi-supervisado)")

@@ -411,6 +411,8 @@ def generate_assignation_detail_report(df: pd.DataFrame, ticket_type: str, timin
     report_df['Previous person assigned'] = prev_assigned_series.apply(clean_empty)
     report_df['Person assigned'] = person_assigned_series.apply(clean_empty)
     report_df['Predicted end date'] = end_date_series.apply(format_date_val)
+    report_df['Model type'] = df.get('prediction_model_type', pd.Series([""] * len(df))).apply(clean_empty)
+    report_df['Model name'] = df.get('prediction_model_name', pd.Series([""] * len(df))).apply(clean_empty)
 
     # Verificar si el archivo ya existe y tiene contenido
     file_exists = os.path.exists(report_path) and os.path.getsize(report_path) > 0

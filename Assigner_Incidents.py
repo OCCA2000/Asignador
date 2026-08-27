@@ -51,6 +51,8 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             
             # Agregar predicciones al dataframe
             df_incidents["predicted_assigned_to"] = predicted_assignees
+            df_incidents["prediction_model_type"] = "supervised"
+            df_incidents["prediction_model_name"] = "assigned_to_tfidf_svm.joblib"
             
             # Aplicar regla de validación de turnos
             df_incidents = apply_shift_validation(df_incidents)
@@ -102,6 +104,8 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             
             X = vectorizer.transform(df_incidents['texto_unificado'])
             df_incidents['Clasificación'] = model.predict(X)
+            df_incidents["prediction_model_type"] = "semisupervised"
+            df_incidents["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
  
             print(f"\n{'='*55}")
             print(f"  MODELO: Logistic Regression (semi-supervisado)")
