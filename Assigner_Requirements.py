@@ -254,15 +254,14 @@ def predict_requirement_assignments(df_requirements, balancer):
             print("[Fecha de resolución calculada a partir de opened_at]")
 
         # Balanceo de carga
-        df_requirements = balancer.balance_assignment(df_requirements)
+        df_requirements = balancer.balance_assignment(df_requirements, assigned_col="predicted_assigned_to")
 
-        if 'assigned_to' in df_requirements.columns:
+        if 'predicted_assigned_to' in df_requirements.columns:
             print(f"\n[Asignación final tras balanceo]")
-            cols = [c for c in [id_col, 'Clasificación', 'assigned_to'] if c]
+            cols = [c for c in [id_col, 'Clasificación', 'predicted_assigned_to'] if c]
             print(df_requirements[cols].to_string(index=False))
 
         # Alinear nombres de columnas para generate_assignment_reports / main()
-        df_requirements['predicted_assigned_to']    = df_requirements['assigned_to']
         df_requirements['predicted_assignment_group'] = df_requirements['Clasificación']
 
         return df_requirements

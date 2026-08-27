@@ -56,9 +56,8 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             df_incidents = apply_shift_validation(df_incidents)
             
             # Agregar predicción de grupo y balancear carga
-            df_incidents = balancer.balance_assignment(df_incidents)
+            df_incidents = balancer.balance_assignment(df_incidents, assigned_col="predicted_assigned_to")
             
-            df_incidents['predicted_assigned_to'] = df_incidents['assigned_to']
             df_incidents['predicted_assignment_group'] = df_incidents['Clasificación']
             
             return df_incidents
@@ -72,13 +71,13 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             import re, unicodedata
             import nltk
             from nltk.corpus import stopwords as nltk_stopwords
-
+ 
             model = joblib.load(f"{model_path}/modelo_Logistic_Regression.joblib")
             vectorizer = joblib.load(f"{model_path}/vectorizer_tfidf.joblib")
-
+ 
             nltk.download('stopwords', quiet=True)
             spanish_stopwords = set(nltk_stopwords.words('spanish'))
-
+ 
             def clean_text(text):
                 if pd.isnull(text):
                     return ""
@@ -91,7 +90,7 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
                 text = re.sub(r'\s+', ' ', text).strip()
                 tokens = [t for t in text.split() if t not in spanish_stopwords]
                 return ' '.join(tokens)
-
+ 
             # Construir texto_unificado con las mismas columnas usadas en entrenamiento
             df_incidents['texto_unificado'] = (
                 df_incidents['short_description'].fillna('') + ' ' +
@@ -103,7 +102,7 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             
             X = vectorizer.transform(df_incidents['texto_unificado'])
             df_incidents['Clasificación'] = model.predict(X)
-
+ 
             print(f"\n{'='*55}")
             print(f"  MODELO: Logistic Regression (semi-supervisado)")
             print(f"  Tickets procesados : {len(df_incidents)}")
@@ -121,19 +120,18 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             print(f"\n[Distribución de clases predichas]")
             for predicted_class, count in df_incidents['Clasificación'].value_counts().items():
                 print(f"  {predicted_class:<35} {count} ticket(s)")
-
+ 
             df_incidents = apply_shift_validation(df_incidents)
-            df_incidents = balancer.balance_assignment(df_incidents)
-
-            if 'assigned_to' in df_incidents.columns:
+            df_incidents = balancer.balance_assignment(df_incidents, assigned_col="predicted_assigned_to")
+ 
+            if 'predicted_assigned_to' in df_incidents.columns:
                 print(f"\n[Asignación final tras balanceo]")
-                cols = [c for c in [id_col, 'Clasificación', 'assigned_to'] if c]
+                cols = [c for c in [id_col, 'Clasificación', 'predicted_assigned_to'] if c]
                 print(df_incidents[cols].to_string(index=False))
-
+ 
             # Alinear nombres de columnas con los que espera generate_assignment_reports/main()
-            df_incidents['predicted_assigned_to'] = df_incidents['assigned_to']
             df_incidents['predicted_assignment_group'] = df_incidents['Clasificación']
-
+ 
             return df_incidents
 
         except Exception as e:

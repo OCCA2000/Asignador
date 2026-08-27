@@ -618,10 +618,10 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
     df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
     
     num_col = next((c for c in ['number', 'Number', 'id'] if c in df.columns), None)
-    assign_col = 'assigned_to'
+    assign_col = 'predicted_assigned_to'
     
     if not num_col or assign_col not in df.columns:
-        print("Error: Required columns ('number' and 'assigned_to') not found in prediction output.")
+        print("Error: Required columns ('number' and 'predicted_assigned_to') not found in prediction output.")
         return
         
     tickets_to_process = df.dropna(subset=[num_col, assign_col])
