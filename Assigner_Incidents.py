@@ -237,13 +237,13 @@ def load_and_clean_data():
     df_incidents = pd.read_csv(output_path, sep=';', dtype=str, engine='python',
                      on_bad_lines='skip', encoding='latin-1')
     
+    original_columns = list(df_incidents.columns)
+    
     # Preservar el valor asignado previo original antes de predecir
     if 'assigned_to' in df_incidents.columns:
         df_incidents['original_assigned_to'] = df_incidents['assigned_to']
     
     print(f"Loaded {len(df_incidents)} incidents")
-    
-    original_columns = list(df_incidents.columns)
     
     return df_incidents, timing, original_columns
 
@@ -267,10 +267,11 @@ def main():
     
     # Actualizar archivo original de asignaciones
     try:
+        import csv
         df_incidents["assigned_to"] = df_incidents["predicted_assigned_to"]
         df_incidents["assignment_group"] = df_incidents["predicted_assignment_group"]
         df_to_append = df_incidents[original_columns]
-        df_to_append.to_csv("Especificaciones/assigned_incidents.csv", mode='a', index=False, header=False, sep=',', encoding='utf-8')
+        df_to_append.to_csv("Especificaciones/assigned_incidents.csv", mode='a', index=False, header=False, sep=',', encoding='utf-8', quoting=csv.QUOTE_ALL)
         print("Successfully updated Especificaciones/assigned_incidents.csv")
     except Exception as e:
         print(f"Error updating assigned file: {e}")

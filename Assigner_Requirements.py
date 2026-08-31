@@ -439,13 +439,13 @@ def load_and_clean_data():
         sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1'
     )
 
+    original_columns = list(df_requirements.columns)
+
     # Preservar el valor asignado previo original antes de predecir
     if 'assigned_to' in df_requirements.columns:
         df_requirements['original_assigned_to'] = df_requirements['assigned_to']
 
     print(f"Loaded {len(df_requirements)} requirements")
-
-    original_columns = list(df_requirements.columns)
 
     return df_requirements, timing, original_columns
 
@@ -466,17 +466,18 @@ def main():
     )
 
     print("Making assignment predictions for requirements...")
-    df_requirements = predict_requirement_assignments(df_requirements, balancer, model_type='semisupervised')
+    df_requirements = predict_requirement_assignments(df_requirements, balancer, model_type='supervised')
 
     generate_assignment_reports(df_requirements, timing, balancer)
 
     try:
+        import csv
         df_requirements["assigned_to"]       = df_requirements["predicted_assigned_to"]
         df_requirements["assignment_group"]  = df_requirements["predicted_assignment_group"]
         df_to_append = df_requirements[original_columns]
         df_to_append.to_csv(
             "Especificaciones/assigned_requirements.csv",
-            mode='a', index=False, header=False, sep=',', encoding='utf-8'
+            mode='a', index=False, header=False, sep=',', encoding='utf-8', quoting=csv.QUOTE_ALL
         )
         print("Successfully updated Especificaciones/assigned_requirements.csv")
     except Exception as e:
