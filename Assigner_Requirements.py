@@ -466,18 +466,29 @@ def main():
     )
 
     print("Making assignment predictions for requirements...")
-    df_requirements = predict_requirement_assignments(df_requirements, balancer, model_type='supervised')
+    df_requirements = predict_requirement_assignments(df_requirements, balancer, model_type='semisupervised')
 
     generate_assignment_reports(df_requirements, timing, balancer)
 
+    # Actualizar archivo original de asignaciones (Upsert deduplicado)
     try:
         import csv
         df_requirements["assigned_to"]       = df_requirements["predicted_assigned_to"]
         df_requirements["assignment_group"]  = df_requirements["predicted_assignment_group"]
-        df_to_append = df_requirements[original_columns]
-        df_to_append.to_csv(
-            "Especificaciones/assigned_requirements.csv",
-            mode='a', index=False, header=False, sep=',', encoding='utf-8', quoting=csv.QUOTE_ALL
+        df_to_save = df_requirements[original_columns]
+        
+        assigned_file = "Especificaciones/assigned_requirements.csv"
+        if os.path.exists(assigned_file):
+            existing_df = pd.read_csv(assigned_file, sep=None, engine='python', dtype=str, encoding='latin-1', on_bad_lines='skip')
+            combined_df = pd.concat([existing_df, df_to_save], ignore_index=True)
+            if 'number' in combined_df.columns:
+                combined_df = combined_df.drop_duplicates(subset=['number'], keep='last')
+        else:
+            combined_df = df_to_save.drop_duplicates(subset=['number'], keep='last') if 'number' in df_to_save.columns else df_to_save
+
+        combined_df.to_csv(
+            assigned_file,
+            index=False, header=True, sep=',', encoding='latin-1', quoting=csv.QUOTE_ALL
         )
         print("Successfully updated Especificaciones/assigned_requirements.csv")
     except Exception as e:
