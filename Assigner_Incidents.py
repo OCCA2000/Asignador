@@ -1,7 +1,5 @@
 from Programas.CleaningData import clean_csv_file, get_output_path_date, ExecutionLogger, generate_assignation_detail_report
 from Programas.Trainer import save_predictions_to_categorized_dataset
-from datetime import datetime
-import glob
 import os
 import pandas as pd
 import joblib
@@ -93,12 +91,33 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
                 tokens = [t for t in text.split() if t not in spanish_stopwords]
                 return ' '.join(tokens)
  
-            # Construir texto_unificado con las mismas columnas usadas en entrenamiento
+            def get_col(col_name):
+                if col_name in df_incidents.columns:
+                    return df_incidents[col_name].fillna('').astype(str)
+                return pd.Series('', index=df_incidents.index)
+
+            # Consolidar cmdb_ci_business_app con cmdb_ci si existe
+            if 'cmdb_ci_business_app' in df_incidents.columns and 'cmdb_ci' in df_incidents.columns:
+                app_ci = df_incidents['cmdb_ci_business_app'].replace(r'^\s*$', None, regex=True).combine_first(
+                    df_incidents['cmdb_ci'].replace(r'^\s*$', None, regex=True)
+                ).fillna('').astype(str)
+            elif 'cmdb_ci_business_app' in df_incidents.columns:
+                app_ci = get_col('cmdb_ci_business_app')
+            elif 'cmdb_ci' in df_incidents.columns:
+                app_ci = get_col('cmdb_ci')
+            else:
+                app_ci = pd.Series('', index=df_incidents.index)
+
+            # Construir texto_unificado con las mismas columnas y orden usadas en entrenamiento
             df_incidents['texto_unificado'] = (
-                df_incidents['short_description'].fillna('') + ' ' +
-                df_incidents['description'].fillna('') + ' ' +
-                df_incidents['u_subcategory'].fillna('') + ' ' +
-                df_incidents['u_subcategory_2'].fillna('')
+                get_col('short_description') + ' ' +
+                get_col('description') + ' ' +
+                app_ci + ' ' +
+                get_col('u_subcategory') + ' ' +
+                get_col('u_subcategory_2') + ' ' +
+                get_col('u_affected_user.title') + ' ' +
+                get_col('u_affected_user.company') + ' ' +
+                get_col('u_affected_user.department')
             )
             df_incidents['texto_unificado'] = df_incidents['texto_unificado'].apply(clean_text)
             
@@ -148,18 +167,14 @@ def apply_shift_validation(df_incidents):
     """Aplica reglas de validación de turnos para escenarios de Operación TI + Batch y Monitoreo"""
     print("Applying shift validation rule...")
     
-    # Crear máscaras para diferentes escenarios de turno
-    batch_category_mask = (
-        df_incidents.get("category", "").astype(str).str.strip() == "Operación TI"
-    )
-    
-    batch_subcategory_mask = (
-        df_incidents.get("u_subcategory", "").astype(str).str.strip() == "Batch"
-    )
-    
-    monitoreo_mask = (
-        df_incidents.get("contact_type", "").astype(str).str.strip() == "Monitoreo"
-    )
+    # Crear máscaras para diferentes escenarios de turno de forma segura
+    category_series = df_incidents["category"] if "category" in df_incidents.columns else pd.Series("", index=df_incidents.index)
+    subcategory_series = df_incidents["u_subcategory"] if "u_subcategory" in df_incidents.columns else pd.Series("", index=df_incidents.index)
+    contact_type_series = df_incidents["contact_type"] if "contact_type" in df_incidents.columns else pd.Series("", index=df_incidents.index)
+
+    batch_category_mask = category_series.fillna("").astype(str).str.strip() == "Operación TI"
+    batch_subcategory_mask = subcategory_series.fillna("").astype(str).str.strip() == "Batch"
+    monitoreo_mask = contact_type_series.fillna("").astype(str).str.strip() == "Monitoreo"
     
     # Combinar todas las máscaras con condiciones OR (cualquier criterio activa asignación por TURNO)
     shift_mask = batch_category_mask | batch_subcategory_mask | monitoreo_mask
