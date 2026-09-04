@@ -5,9 +5,13 @@ import pandas as pd
 import joblib
 from Programas.LoadBalancer import WorkloadBalancer
 
-def predict_incident_assignments(df_incidents, balancer, model_type='supervised'):
+def predict_incident_assignments(df_incidents, balancer, model_type='supervised', architecture='hnlp_mc'):
     """Predice asignaciones de incidentes utilizando modelos entrenados"""
-    print(f"Predicting incident assignments using {model_type} model...")
+    if model_type == 'semisupervised':
+        arch_label = "HNLP-MC (Multi-Canal)" if architecture in ['hnlp_mc', 'hnlp'] else "TF-IDF (Baseline)"
+        print(f"Predicting incident assignments using semisupervised model [{arch_label}]...")
+    else:
+        print(f"Predicting incident assignments using {model_type} model...")
     
     model_path = f"Incidentes/{model_type}_model"
     
@@ -58,7 +62,10 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             # Agregar predicción de grupo y balancear carga
             df_incidents = balancer.balance_assignment(df_incidents, assigned_col="predicted_assigned_to")
             
-            df_incidents['predicted_assignment_group'] = df_incidents['Clasificación']
+            df_incidents['predicted_assignment_group'] = (
+                df_incidents['Clasificación'] if 'Clasificación' in df_incidents.columns
+                else df_incidents.get('assignment_group', pd.Series('N/A', index=df_incidents.index))
+            )
             
             return df_incidents
             
@@ -71,9 +78,6 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             import re, unicodedata
             import nltk
             from nltk.corpus import stopwords as nltk_stopwords
- 
-            model = joblib.load(f"{model_path}/modelo_Logistic_Regression.joblib")
-            vectorizer = joblib.load(f"{model_path}/vectorizer_tfidf.joblib")
  
             nltk.download('stopwords', quiet=True)
             spanish_stopwords = set(nltk_stopwords.words('spanish'))
@@ -108,38 +112,63 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             else:
                 app_ci = pd.Series('', index=df_incidents.index)
 
-            # Construir texto_unificado con las mismas columnas y orden usadas en entrenamiento
-            df_incidents['texto_unificado'] = (
-                get_col('short_description') + ' ' +
-                get_col('description') + ' ' +
-                app_ci + ' ' +
-                get_col('u_subcategory') + ' ' +
-                get_col('u_subcategory_2') + ' ' +
-                get_col('u_affected_user.title') + ' ' +
-                get_col('u_affected_user.company') + ' ' +
-                get_col('u_affected_user.department')
-            )
-            df_incidents['texto_unificado'] = df_incidents['texto_unificado'].apply(clean_text)
-            
-            X = vectorizer.transform(df_incidents['texto_unificado'])
-            df_incidents['Clasificación'] = model.predict(X)
-            df_incidents["prediction_model_type"] = "semisupervised"
-            df_incidents["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
- 
+            # ─────────────────────────────────────────────────────────────────
+            # RAMA A: Arquitectura HNLP-MC (Híbrido Multi-Canal)
+            # ─────────────────────────────────────────────────────────────────
+            if architecture in ['hnlp_mc', 'hnlp']:
+                pipeline = joblib.load(f"{model_path}/pipeline_HNLP_MC.joblib")
+
+                # Preparar los 3 canales de entrada para el ColumnTransformer
+                df_canales = pd.DataFrame(index=df_incidents.index)
+                df_canales['texto_sintoma'] = (get_col('short_description') + ' ' + get_col('description')).apply(clean_text)
+                df_canales['cargo_solicitante'] = get_col('u_affected_user.title').replace('', 'desconocido').apply(clean_text)
+                df_canales['aplicacion'] = app_ci.replace('', 'DESCONOCIDO')
+                df_canales['empresa'] = get_col('u_affected_user.company').replace('', 'DESCONOCIDO')
+                df_canales['subcategoria'] = get_col('u_subcategory_2').replace('', 'DESCONOCIDO')
+
+                df_incidents['Clasificación'] = pipeline.predict(df_canales)
+                df_incidents["prediction_model_type"] = "semisupervised_hnlp_mc"
+                df_incidents["prediction_model_name"] = "pipeline_HNLP_MC.joblib"
+                nombre_display = "HNLP-MC (Híbrido Multi-Canal - LinearSVC)"
+
+            # ─────────────────────────────────────────────────────────────────
+            # RAMA B: Línea Base TF-IDF (Canal Textual Único)
+            # ─────────────────────────────────────────────────────────────────
+            else:
+                model = joblib.load(f"{model_path}/modelo_Logistic_Regression.joblib")
+                vectorizer = joblib.load(f"{model_path}/vectorizer_tfidf.joblib")
+
+                # Construir texto_unificado con las mismas columnas y orden usadas en entrenamiento
+                df_incidents['texto_unificado'] = (
+                    get_col('short_description') + ' ' +
+                    get_col('description') + ' ' +
+                    app_ci + ' ' +
+                    get_col('u_subcategory') + ' ' +
+                    get_col('u_subcategory_2') + ' ' +
+                    get_col('u_affected_user.title') + ' ' +
+                    get_col('u_affected_user.company') + ' ' +
+                    get_col('u_affected_user.department')
+                )
+                df_incidents['texto_unificado'] = df_incidents['texto_unificado'].apply(clean_text)
+
+                X = vectorizer.transform(df_incidents['texto_unificado'])
+                df_incidents['Clasificación'] = model.predict(X)
+                df_incidents["prediction_model_type"] = "semisupervised_tfidf"
+                df_incidents["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
+                nombre_display = "Logistic Regression (TF-IDF Baseline)"
+
             print(f"\n{'='*55}")
-            print(f"  MODELO: Logistic Regression (semi-supervisado)")
+            print(f"  MODELO: {nombre_display}")
             print(f"  Tickets procesados : {len(df_incidents)}")
-            print(f"  Features TF-IDF    : {X.shape[1]}")
             print(f"{'='*55}")
             print("\n[Clasificación predicha por el modelo]\n")
             id_col = next((c for c in ['number', 'Number', 'id'] if c in df_incidents.columns), None)
             for _, row in df_incidents.iterrows():
                 ticket_id = row[id_col] if id_col else "—"
                 desc = str(row.get('short_description', ''))[:60]
+                desc_safe = desc.encode('ascii', errors='replace').decode('ascii')
                 predicted_class = row['Clasificación']
-                text = str(row.get('texto_unificado', ''))[:50]
-                print(f"  {ticket_id}  |  {predicted_class:<30}  |  {desc}")
-                print(f"  {'':^10}     texto: {text}")
+                print(f"  {ticket_id}  |  {predicted_class:<30}  |  {desc_safe}")
             print(f"\n[Distribución de clases predichas]")
             for predicted_class, count in df_incidents['Clasificación'].value_counts().items():
                 print(f"  {predicted_class:<35} {count} ticket(s)")
@@ -158,7 +187,7 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             return df_incidents
 
         except Exception as e:
-            print(f"Error in test_semisupervisado prediction: {e}")
+            print(f"Error in semisupervised prediction: {e}")
             return df_incidents
 
     return df_incidents
@@ -274,8 +303,15 @@ def main():
     balancer = WorkloadBalancer()
     
     # Realizar predicciones (usando modelos entrenados)
+    # model_type: 'supervised' | 'semisupervised'
+    # architecture (solo para semisupervised): 'hnlp_mc' (default) | 'tfidf'
     print("Making assignment predictions for incidents...")
-    df_incidents = predict_incident_assignments(df_incidents, balancer, model_type='semisupervised')
+    df_incidents = predict_incident_assignments(
+        df_incidents,
+        balancer,
+        model_type='semisupervised',
+        architecture='hnlp_mc'
+    )
     
     # Generar reportes
     generate_assignment_reports(df_incidents, timing, balancer)
