@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
-from Programas.CleaningData import archive_previous_files, get_windows_date_format, ExecutionLogger
+from Programas.PipelineUtils import archive_previous_files, get_windows_date_format, ExecutionLogger
 
 # ==========================================
 # CONFIGURACIÓN

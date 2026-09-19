@@ -1,4 +1,4 @@
-from Programas.CleaningData import clean_csv_file, get_output_path_date, ExecutionLogger, generate_assignation_detail_report
+from Programas.PipelineUtils import clean_csv_file, get_output_path_date, ExecutionLogger, generate_assignation_detail_report
 from Programas.Trainer import save_predictions_to_categorized_dataset
 import os
 import pandas as pd

@@ -62,7 +62,7 @@ def generate_report():
                 })
                     
     # 3. Formatear salida
-    from Programas.CleaningData import get_output_path_date
+    from Programas.PipelineUtils import get_output_path_date
     report_path, timing = get_output_path_date("reporte_carga_por_grupos", base_dir="Salida", ext=".txt")
     
     report_lines = []

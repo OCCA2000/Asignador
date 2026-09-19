@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 from datetime import datetime, timedelta
-from Programas.CleaningData import clean_csv_file, get_windows_date_format
+from Programas.PipelineUtils import clean_csv_file, get_windows_date_format
 import random
 
 def _normalize_text(text):

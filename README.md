@@ -41,7 +41,7 @@ Este sistema utiliza modelos de Machine Learning avanzados para predecir la cate
   - Captura estándar de `stdout` y `stderr` hacia la consola y archivos `.log` fechados.
   - Archivamiento automático de ejecuciones y logs anteriores hacia carpetas `Salida/YYYY-MM-DD/`.
   - Soporte de entorno `DISABLE_EXECUTION_LOGGER=1` para evitar logs duplicados durante ejecuciones orquestadas.
-- **Limpieza de Datos y Formato de Fecha OS (`CleaningData.py`)**:
+- **Utilidades del Pipeline, Limpieza de Datos y Formato de Fecha OS (`PipelineUtils.py`)**:
   - Corrección de registros CSV multilínea encerrados en comillas dobles (saltos de línea internos).
   - Detección automática del formato de fecha corta de Windows (`sShortDate` vía Registro de Windows).
 - **Reporte Acumulativo de Asignaciones**:
@@ -60,7 +60,7 @@ Asignador/
 ├── RPA_ServiceNow_DOM_E2E.py               # Orquestador RPA E2E mediante inyección JavaScript DOM (Recomendado)
 ├── RPA_ServiceNow_E2E.py                   # Orquestador RPA E2E mediante coordenadas de pantalla
 ├── Programas/
-│   ├── CleaningData.py                     # Logging (ExecutionLogger), limpieza CSV y fecha regional OS
+│   ├── PipelineUtils.py                    # Logging (ExecutionLogger), utilidades de pipeline, limpieza CSV y fecha regional OS
 │   ├── Trainer.py                          # Entrenamiento de modelos (Supervisados y No supervisados)
 │   ├── LoadBalancer.py                     # Balanceador de carga de trabajo y lógica de turnos
 │   ├── GroupWorkloadReport.py              # Generador de reportes de carga de grupos
@@ -215,7 +215,7 @@ py RPA_ServiceNow_E2E.py
 ## Configuration & Feature Details
 
 ### Sistema de Logging y Registro (`ExecutionLogger`)
-- Implementado en `Programas/CleaningData.py`.
+- Implementado en `Programas/PipelineUtils.py`.
 - Genera automáticamente un archivo `.log` con marca de tiempo en `Salida/` (ej. `ejecucion_incidents_2026-09-19_13-00-00.log`).
 - Mantiene duplicación de stream (`TeeStream`) para reflejar la salida simultáneamente en la consola y en el archivo log.
 - En ejecuciones orquestadas, la variable `DISABLE_EXECUTION_LOGGER=1` evita la creación de logs fragmentados en los subprocesos.
