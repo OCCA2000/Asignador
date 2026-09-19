@@ -754,3 +754,101 @@ def generate_assignation_detail_report(df: pd.DataFrame, ticket_type: str, timin
     print(f"Reporte detallado acumulativo actualizado en: {report_path}")
     return report_path
 
+
+def get_latest_training_dataset(ticket_type: str, kind: str = 'preparados',
+                                explicit_path: str = None,
+                                base_dir: str = None,
+                                use_previous_version: bool = False,
+                                verbose: bool = True) -> str:
+    """
+    Resuelve dinámicamente el archivo de dataset de entrenamiento, priorizando la fecha
+    y hora de modificación (os.path.getmtime) como discriminante principal.
+
+    - ticket_type: 'incidentes' (o 'incidents') | 'requerimientos' (o 'requirements')
+    - kind: 'preparados' (*Preparados*.csv), 'categorizados' (*Categorizados_v*.csv),
+            'depurado' (*depurado*.csv), o cualquier patrón específico.
+    - explicit_path: Ruta forzada específica (o leída de entorno TRAINING_DATA_PATH).
+    - use_previous_version: Si es True y hay múltiples versiones (ej. en Categorizados donde la última
+                            recibe las nuevas predicciones activas), selecciona la versión previa inmediatamente anterior.
+    """
+    # 1. Verificar si hay ruta explícita o variable de entorno
+    if not explicit_path:
+        explicit_path = os.environ.get('TRAINING_DATA_PATH', '').strip()
+
+    if explicit_path:
+        if os.path.exists(explicit_path):
+            if verbose:
+                print(f"[DatasetResolver] Usando dataset explícito: {explicit_path}")
+            return os.path.normpath(explicit_path)
+        else:
+            print(f"[DatasetResolver] Advertencia: la ruta explícita '{explicit_path}' no existe. Buscando dinámicamente...")
+
+    # 2. Determinar directorio base según ticket_type
+    ticket_lower = str(ticket_type).lower()
+    is_incidents = 'incid' in ticket_lower
+
+    if base_dir is None:
+        workspace = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        domain_folder = "Incidentes" if is_incidents else "Requerimientos"
+        base_dir = os.path.join(workspace, domain_folder, "Entrenamiento", "Datos")
+
+    if not os.path.exists(base_dir):
+        domain_folder = "Incidentes" if is_incidents else "Requerimientos"
+        base_dir = os.path.join(domain_folder, "Entrenamiento", "Datos")
+
+    if not os.path.exists(base_dir):
+        raise FileNotFoundError(f"Directorio de datos de entrenamiento no encontrado: {base_dir}")
+
+    # 3. Definir patrones de búsqueda según 'kind'
+    kind_lower = str(kind).lower()
+    if 'prep' in kind_lower:
+        patterns = ["*Preparados*.csv", "*preparados*.csv"]
+    elif 'categ' in kind_lower:
+        patterns = ["*Categorizados_v*.csv", "*categorizados_v*.csv", "*Categorizados*.csv"]
+    elif 'depur' in kind_lower:
+        patterns = ["*depurado*.csv", "*Depurado*.csv"]
+    else:
+        patterns = [f"*{kind}*.csv", f"{kind}"]
+
+    candidates = []
+    for pat in patterns:
+        search_path = os.path.join(base_dir, pat)
+        candidates.extend(glob.glob(search_path))
+
+    candidates = list(set(os.path.normpath(c) for c in candidates if os.path.isfile(c)))
+
+    if not candidates:
+        all_csvs = glob.glob(os.path.join(base_dir, "*.csv"))
+        candidates = [os.path.normpath(c) for c in all_csvs if os.path.isfile(c)]
+
+    if not candidates:
+        raise FileNotFoundError(f"No se encontró ningún archivo CSV de entrenamiento en: {base_dir}")
+
+    def _extract_v(filepath):
+        fname = os.path.basename(filepath)
+        m = re.search(r"_v(\d+)\.csv$", fname, re.IGNORECASE)
+        return int(m.group(1)) if m else 0
+
+    # 4. Ordenar con prioridad principal en FECHA DE MODIFICACIÓN (getmtime descendente)
+    # y secundariamente por número de versión
+    candidates.sort(key=lambda f: (os.path.getmtime(f), _extract_v(f)), reverse=True)
+
+    # 5. Manejar opción de versión previa para datasets categorizados
+    if use_previous_version and len(candidates) > 1 and 'categ' in kind_lower:
+        by_version = sorted(candidates, key=lambda f: _extract_v(f), reverse=True)
+        if _extract_v(by_version[0]) > 0:
+            selected_file = by_version[1]
+            if verbose:
+                print(f"[DatasetResolver] Seleccionada versión anterior consolidada: {os.path.basename(selected_file)}")
+        else:
+            selected_file = candidates[1]
+    else:
+        selected_file = candidates[0]
+
+    if verbose:
+        mtime_dt = datetime.fromtimestamp(os.path.getmtime(selected_file)).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"[DatasetResolver] Dataset resuelto dinámicamente ({kind}): {os.path.basename(selected_file)} [mtime: {mtime_dt}]")
+
+    return selected_file
+
+

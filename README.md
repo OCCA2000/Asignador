@@ -64,37 +64,49 @@ Asignador/
 ├── RPA_ServiceNow_E2E.py                   # Orquestador RPA E2E mediante coordenadas de pantalla
 ├── Programas/
 │   ├── PipelineUtils.py                    # Logging (ExecutionLogger), utilidades de pipeline, limpieza CSV y fecha regional OS
-│   ├── Trainer.py                          # Entrenamiento de modelos (Supervisados y No supervisados)
+│   ├── Trainer.py                          # Orquestador integral de entrenamiento ML (Supervisado, Semisupervisado y No supervisado)
 │   ├── LoadBalancer.py                     # Balanceador de carga de trabajo y lógica de turnos
 │   ├── GroupWorkloadReport.py              # Generador de reportes de carga de grupos
 │   └── GroupMapper.py                      # Mapeador de grupos primarios
-├── Incidentes/                             # Modelos, notebooks y datos de incidentes
-│   ├── Datos/                          # IncidentesCategorizados_v2.csv, Incidentes_Preparados.csv
+├── Incidentes/                             # Modelos, notebooks, scripts y datos de incidentes
+│   ├── Datos/                          # IncidentesCategorizados_v2.csv, Incidentes_Preparados.csv, incidentes_depurado.csv
 │   ├── Entrenamiento/
+│   │   ├── Supervisado/
+│   │   │   └── SupervisedMultipleFeatureIncidents.py     # Script: SVM + FeatureUnion (texto + metadatos)
+│   │   ├── No supervisado/
+│   │   │   └── UnsupervisedMultipleFeatureIncidents.py   # Script: DBSCAN + TruncatedSVD
 │   │   └── Semisupervisado/
-│   │       ├── 01_EDA_Categorizacion_Incidentes.ipynb     # Módulo 1: EDA, Cramér's V y dataset preparado
-│   │       ├── 02_Entrenamiento_TFIDF_Incidentes.ipynb   # Módulo 2: Baseline TF-IDF (GroupSplit, ROS)
-│   │       ├── 03_Entrenamiento_HNLP_MC_Incidentes.ipynb # Módulo 3: Arquitectura Multicanal HNLP-MC
+│   │       ├── Entrenamiento_TFIDF_Incidentes.py         # Script: Baseline TF-IDF (GroupSplit, ROS)
+│   │       ├── Entrenamiento_HNLP_MC_Incidentes.py       # Script: Arquitectura Multicanal HNLP-MC
+│   │       ├── 01_EDA_Categorizacion_Incidentes.ipynb     # Cuaderno: EDA, Cramér's V y dataset preparado
+│   │       ├── 02_Entrenamiento_TFIDF_Incidentes.ipynb   # Cuaderno interactivo: Baseline TF-IDF
+│   │       ├── 03_Entrenamiento_HNLP_MC_Incidentes.ipynb # Cuaderno interactivo: Multicanal HNLP-MC
 │   │       └── Resultados/                 # CSVs de confusiones y pseudo-etiquetado
 │   ├── semisupervised_model/
 │   │   ├── pipeline_HNLP_MC.joblib         # Pipeline integral Scikit-learn HNLP-MC (Producción)
 │   │   ├── modelo_Logistic_Regression.joblib # Modelo TF-IDF Baseline
 │   │   └── vectorizer_tfidf.joblib         # Vectorizador TF-IDF unificado
-│   ├── supervised_model/                   # Modelos supervisados para incidentes
+│   ├── supervised_model/                   # Modelos supervisados para incidentes (assigned_to_tfidf_svm.joblib)
 │   └── unsupervised_model/                 # Modelos no supervisados (clusters) para incidentes
-├── Requerimientos/                         # Modelos, notebooks y datos de requerimientos
-│   ├── Datos/                          # RequerimientosCategorizados_v1.csv, Requerimientos_Preparados.csv
+├── Requerimientos/                         # Modelos, notebooks, scripts y datos de requerimientos
+│   ├── Datos/                          # RequerimientosCategorizados_v1.csv, Requerimientos_Preparados.csv, requerimientos_depurado.csv
 │   ├── Entrenamiento/
+│   │   ├── Supervisado/
+│   │   │   └── SupervisedMultipleFeatureRequirements.py  # Script: SVM + FeatureUnion (texto + metadatos)
+│   │   ├── No supervisado/
+│   │   │   └── UnsupervisedMultipleFeatureRequirements.py# Script: DBSCAN + TruncatedSVD
 │   │   └── Semisupervisado/
-│   │       ├── 01_EDA_Categorizacion_Requerimientos.ipynb     # Módulo 1: EDA, Cramér's V y dataset preparado
-│   │       ├── 02_Entrenamiento_TFIDF_Requerimientos.ipynb   # Módulo 2: Baseline TF-IDF (GroupSplit, ROS)
-│   │       ├── 03_Entrenamiento_HNLP_MC_Requerimientos.ipynb # Módulo 3: Arquitectura Multicanal HNLP-MC
+│   │       ├── Entrenamiento_TFIDF_Requerimientos.py     # Script: Baseline TF-IDF (GroupSplit, ROS)
+│   │       ├── Entrenamiento_HNLP_MC_Requerimientos.py   # Script: Arquitectura Multicanal HNLP-MC
+│   │       ├── 01_EDA_Categorizacion_Requerimientos.ipynb     # Cuaderno: EDA, Cramér's V y dataset preparado
+│   │       ├── 02_Entrenamiento_TFIDF_Requerimientos.ipynb   # Cuaderno interactivo: Baseline TF-IDF
+│   │       ├── 03_Entrenamiento_HNLP_MC_Requerimientos.ipynb # Cuaderno interactivo: Multicanal HNLP-MC
 │   │       └── Resultados/                 # CSVs de confusiones y pseudo-etiquetado
 │   ├── semisupervised_model/
 │   │   ├── pipeline_HNLP_MC.joblib         # Pipeline integral Scikit-learn HNLP-MC (Producción)
 │   │   ├── modelo_Logistic_Regression.joblib # Modelo TF-IDF Baseline
 │   │   └── vectorizer_tfidf.joblib         # Vectorizador TF-IDF unificado
-│   ├── supervised_model/                   # Modelos supervisados para requerimientos
+│   ├── supervised_model/                   # Modelos supervisados para requerimientos (assigned_to_tfidf_svm.joblib)
 │   └── unsupervised_model/                 # Modelos no supervisados (clusters) para requerimientos
 ├── Entrada/                                # Archivos de entrada (incident.csv, sc_req_item.csv e histórico)
 ├── Especificaciones/                       # Parámetros (Grupos, Usuarios, Turnos, rpa_config_parameters.json)
@@ -181,17 +193,49 @@ predict_incident_assignments(df, balancer, model_type='semisupervised', architec
 predict_requirement_assignments(df, balancer, model_type='semisupervised', architecture='tfidf')
 ```
 
-### 2. Re-entrenar Modelos Semisupervisados (Jupyter Notebooks)
-Para reproducir o actualizar el entrenamiento sobre nuevos datos históricos:
-1. **Paso 1**: Ejecutar `01_EDA_Categorizacion_*.ipynb` para auditar datos y generar el dataset preparado `*_Preparados.csv`.
-2. **Paso 2**: Ejecutar `02_Entrenamiento_TFIDF_*.ipynb` para evaluar la línea base TF-IDF y generar diagnósticos de confusión.
-3. **Paso 3**: Ejecutar `03_Entrenamiento_HNLP_MC_*.ipynb` para entrenar la arquitectura multicanal y actualizar el artefacto `pipeline_HNLP_MC.joblib`.
+### 2. Orquestador Central de Entrenamiento ML (`Trainer.py`)
+El script [`Programas/Trainer.py`](Programas/Trainer.py) centraliza y orquesta de forma unificada o granular el entrenamiento de los **8 modelos de Machine Learning** del sistema (supervisados, no supervisados y semisupervisados para incidentes y requerimientos), con registro automático de salida en `Salida/entrenamiento_*.log`:
 
-### 3. Entrenar Modelos Supervisados Tradicionales
-Para actualizar los clasificadores supervisados (`supervised_model/`) y clusters no supervisados:
 ```bash
-py Programas/Trainer.py
+# Entrenar TODO el sistema (los 8 modelos en una sola pasada)
+py Programas/Trainer.py --all
+
+# Entrenar solo incidentes (supervisado, no supervisado y semisupervisado)
+py Programas/Trainer.py -t incidentes
+
+# Entrenar solo requerimientos
+py Programas/Trainer.py -t requerimientos
+
+# Entrenar solo un paradigma específico en ambos tipos de tickets
+py Programas/Trainer.py -p supervised        # Solo modelos supervisados (SVM + FeatureUnion)
+py Programas/Trainer.py -p unsupervised      # Solo modelos no supervisados (DBSCAN + SVD)
+py Programas/Trainer.py -p semisupervised    # Solo modelos semisupervisados (TF-IDF y HNLP-MC)
+
+# Entrenar una arquitectura semisupervisada puntual
+py Programas/Trainer.py -t incidentes -p semisupervised -a hnlp_mc   # Solo HNLP-MC Incidentes
+py Programas/Trainer.py -t requerimientos -p semisupervised -a tfidf # Solo Baseline TF-IDF Requerimientos
 ```
+
+#### Opciones de Línea de Comandos (`Trainer.py --help`):
+- `-t, --ticket-type`: `all` (default), `incidentes`, `requerimientos`.
+- `-p, --paradigm`: `all` (default), `supervised`, `unsupervised`, `semisupervised`.
+- `-a, --architecture`: `all` (default), `tfidf`, `hnlp_mc` (aplica a semisupervisado).
+- `-d, --data-path`: Ruta específica a un archivo de dataset (anula la resolución automática).
+- `--sync-notebooks`: Fuerza la sincronización manual de todos los cuadernos `.ipynb` hacia scripts `.py`.
+- `--all`: Fuerza el entrenamiento secuencial completo de los 8 modelos.
+- `--no-log`: Desactiva la captura en archivo de log dentro de `Salida/` (útil si se ejecuta embebido).
+
+#### Sincronización Automática y Datasets Dinámicos:
+- **Auto-Sincronización Transparente (`.ipynb` $\rightarrow$ `.py`)**: Puedes seguir editando exclusivamente tus cuadernos Jupyter. Antes de entrenar, `Trainer.py` detecta si el `.ipynb` fue modificado (`mtime`), extrae el código, neutraliza llamadas bloqueantes (`plt.show()` $\rightarrow$ `plt.close()`), inyecta compatibilidad (`display = print`) y actualiza el script `.py` automáticamente.
+- **Detección Dinámica de Datasets (Prioridad en Fecha de Modificación)**: Mediante `get_latest_training_dataset` en `PipelineUtils.py`, el sistema resuelve dinámicamente el archivo de datos más reciente según su fecha y hora de modificación (`os.path.getmtime`), permitiendo cambiar de versión o generar nuevos preparados sin quemar nombres en código. Para datasets categorizados continuos (`*Categorizados_v*.csv`), permite discriminar la versión consolidada previa frente al archivo activo de anexión.
+
+### 3. Exploración Interactiva en Cuadernos (`Jupyter Notebooks`)
+Los cuadernos de Jupyter (`.ipynb`) se mantienen completamente funcionales para investigación exploratoria, auditoría estadística y visualizaciones gráficas interactivas:
+1. **Paso 1 - Módulo 1**: Ejecutar `01_EDA_Categorizacion_*.ipynb` para auditar datos, calcular el $V$ de Cramér y generar los datasets curados `*_Preparados.csv`.
+2. **Paso 2 - Módulo 2**: Ejecutar `02_Entrenamiento_TFIDF_*.ipynb` para visualizar curvas de codo KNN, distribuciones de confianza y diagnósticos de confusión.
+3. **Paso 3 - Módulo 3**: Ejecutar `03_Entrenamiento_HNLP_MC_*.ipynb` para visualizar heatmaps de matrices de confusión y comparativas multicanal.
+
+*(Cualquier cambio guardado en estos cuadernos es detectado y sincronizado automáticamente por `Trainer.py`).*
 
 ### 4. Ejecutar Orquestador RPA ServiceNow (Modo DOM DevTools - Recomendado)
 Automatización completa E2E descargando listas, ejecutando modelos de ML e inyectando campos vía la consola DevTools del navegador:
