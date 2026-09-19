@@ -11,6 +11,258 @@ import pandas as pd
 # Cache global de stopwords para optimizar rendimiento
 _SPANISH_STOPWORDS = None
 
+# Mapeo ordenado de secuencias de mojibake y corrupción de codificación UTF-8 / Latin-1 / cp1252
+MOJIBAKE_REPLACEMENTS = [
+    # 1. Triple-encoded / Multi-layer mojibake
+    ('Ã\x83Â¡', 'á'), ('Ã\x83Â©', 'é'), ('Ã\x83Â\xad', 'í'), ('Ã\x83Â­', 'í'), ('Ã\x83Â¬', 'í'),
+    ('Ã\x83Â³', 'ó'), ('Ã\x83Âº', 'ú'), ('Ã\x83Â±', 'ñ'),
+    ('Ã\x83Â\x81', 'Á'), ('Ã\x83Â‰', 'É'), ('Ã\x83Â\x8d', 'Í'), ('Ã\x83Â“', 'Ó'),
+    ('Ã\x83Âš', 'Ú'), ('Ã\x83Â\x91', 'Ñ'),
+    ('ÃƒÂ¡', 'á'), ('ÃƒÂ©', 'é'), ('ÃƒÂ\xad', 'í'), ('ÃƒÂ³', 'ó'), ('ÃƒÂº', 'ú'), ('ÃƒÂ±', 'ñ'),
+    ('ÃƒÂ', 'Á'), ('ÃƒÂ‰', 'É'), ('ÃƒÂ“', 'Ó'), ('ÃƒÂš', 'Ú'), ('ÃƒÂ‘', 'Ñ'),
+    ('Ã‚Â¿', '¿'), ('Ã‚Â¡', '¡'),
+
+    # 2. Mayúsculas UTF-8 en cp1252 / secuencias de bytes crudos (deben ejecutarse antes de caracteres individuales)
+    ('Ã\x81', 'Á'), ('Ã\x89', 'É'), ('Ã\x8d', 'Í'), ('Ã\x91', 'Ñ'), ('Ã\x92', 'Ó'), ('Ã\x93', 'Ó'),
+    ('Ã\x9a', 'Ú'), ('Ã\x9c', 'Ü'),
+    ('Ã‘', 'Ñ'), ('Ã“', 'Ó'), ('Ã‰', 'É'), ('Ãš', 'Ú'), ('Ãœ', 'Ü'),
+
+    # 3. Minúsculas UTF-8 en Latin-1 / cp1252
+    ('Ã¡', 'á'), ('Ã©', 'é'), ('Ã­', 'í'), ('Ã\xad', 'í'), ('Ã³', 'ó'), ('Ãº', 'ú'), ('Ã±', 'ñ'),
+    ('Ã¼', 'ü'),
+    ('Ã ', 'Á'), ('Ã ', 'Í'),
+
+    # 4. Signos de puntuación y símbolos comunes
+    ('Â¿', '¿'), ('Â¡', '¡'), ('Â°', '°'), ('Âº', 'º'), ('Âª', 'ª'),
+    ('Â\x91', "'"), ('Â\x92', "'"), ('Â\x93', '"'), ('Â\x94', '"'), ('Â\x96', '-'), ('Â\x97', '-'),
+    ('â€“', '–'), ('â€”', '—'), ('â€˜', "‘"), ('â€™', "’"), ('â€œ', '“'), ('â€\x9d', '”'), ('â€', '"'),
+    ('â€¢', '•'), ('â€¦', '…'),
+    ('Â\xa0', ' '), ('\xa0', ' '), ('Â ', ' '),
+
+    # 5. Comillas y guiones aislados cp1252 (después de resolver pares con Ã)
+    ('\x91', "'"), ('\x92', "'"), ('\x93', '"'), ('\x94', '"'), ('\x96', '-'), ('\x97', '-')
+]
+
+
+def clean_encoding_text(text: str) -> str:
+    """
+    Corrige y normaliza secuencias corruptas de codificación (mojibake UTF-8 / Latin-1 / Windows-1252).
+    Es completamente idempotente: si el texto ya está limpio en UTF-8 correcto,
+    lo devuelve intacto sin alteración alguna.
+    """
+    if text is None or pd.isna(text):
+        return ""
+
+    t = str(text)
+    if not t:
+        return ""
+
+    # 1. Bypass rápido si el texto no contiene secuencias de mojibake ni caracteres sospechosos
+    has_mojibake = any(c in t for c in (
+        'Ã', 'Â', 'â', 'ã', 'ƒ', '\x81', '\x83', '\x89', '\x8d', '\x91', '\x92',
+        '\x93', '\x94', '\x96', '\x97', '\x9a', '\x9c', '\xa0', '\xad'
+    ))
+    if not has_mojibake:
+        return t
+
+    # 2. Aplicar reemplazos ordenados para secuencias específicas y triples
+    for bad, good in MOJIBAKE_REPLACEMENTS:
+        if bad in t:
+            t = t.replace(bad, good)
+
+    # 3. Si aún quedan secuencias candidatas, intentar decodificación utf-8 de bloques
+    if any(c in t for c in ('Ã', 'Â', 'â')):
+        try:
+            candidate = t.encode('latin-1').decode('utf-8')
+            t = candidate
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            def _sub_chunk(m):
+                chunk = m.group(0)
+                try:
+                    return chunk.encode('latin-1').decode('utf-8')
+                except Exception:
+                    return chunk
+            t = re.sub(r'[\xc2\xc3][\x80-\xbf]', _sub_chunk, t)
+
+    # 4. Limpieza residual de caracteres de control cp1252 o Â huérfana
+    t = re.sub(r'Â(?=[\s\.,;:\-_/\(\)])', '', t)
+    t = re.sub(r'[\x80-\x9f]', '', t)
+
+    return t
+
+
+def clean_dataframe_encodings(df: pd.DataFrame, columns: list = None) -> tuple:
+    """
+    Recorre las columnas de texto de un DataFrame y aplica clean_encoding_text.
+    Calcula cuántos registros fueron modificados.
+
+    Retorna: (df_limpio, total_modificaciones)
+    Si total_modificaciones == 0, significa que el dataset ya estaba limpio.
+    """
+    if df is None or df.empty:
+        return df, 0
+
+    df_clean = df.copy()
+    if columns is None:
+        columns = list(df_clean.select_dtypes(include=['object', 'string']).columns)
+
+    total_changes = 0
+    for col in columns:
+        if col not in df_clean.columns:
+            continue
+        original_col = df_clean[col].astype(str)
+        cleaned_col = df_clean[col].apply(clean_encoding_text)
+        diff_mask = (original_col != cleaned_col) & df_clean[col].notna()
+        changes = int(diff_mask.sum())
+        if changes > 0:
+            df_clean[col] = cleaned_col
+            total_changes += changes
+
+    return df_clean, total_changes
+
+
+def detect_csv_separator(filepath: str, default: str = ';') -> str:
+    """Detecta si el archivo utiliza coma (',') o punto y coma (';') como separador."""
+    try:
+        with open(filepath, 'r', encoding='latin-1', errors='ignore') as f:
+            first_line = f.readline()
+        count_semi = first_line.count(';')
+        count_comma = first_line.count(',')
+        if count_semi > count_comma:
+            return ';'
+        elif count_comma > 0:
+            return ','
+    except Exception:
+        pass
+    return default
+
+
+def clean_dataset_encodings(file_path: str, output_path: str = None, sep: str = None,
+                            text_columns: list = None, in_place: bool = False,
+                            verbose: bool = True) -> pd.DataFrame:
+    """
+    Carga un archivo CSV de entrenamiento o inferencia, detecta su codificación y separador de origen,
+    corrige mojibake y secuencias UTF-8 dañadas de forma idempotente.
+
+    - Si el dataset ya está limpio, NO altera el archivo original y devuelve el DataFrame tal cual.
+    - Si detecta datos corruptos y (in_place=True o output_path especificado), guarda la versión
+      corregida en codificación 'utf-8-sig'.
+
+    Retorna el DataFrame limpio.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"No se encontró el archivo de dataset: {file_path}")
+
+    if sep is None:
+        sep = detect_csv_separator(file_path)
+
+    encodings_to_try = ['utf-8', 'latin-1', 'cp1252']
+    df = None
+    for enc in encodings_to_try:
+        try:
+            df = pd.read_csv(file_path, sep=sep, encoding=enc, dtype=str, on_bad_lines='skip', engine='python')
+            break
+        except Exception:
+            continue
+
+    if df is None:
+        raise ValueError(f"No fue posible leer el archivo {file_path} con las codificaciones habituales.")
+
+    df_clean, total_changes = clean_dataframe_encodings(df, columns=text_columns)
+    target_save_path = output_path if output_path else (file_path if in_place else None)
+
+    if total_changes == 0:
+        if verbose:
+            print(f"[PipelineUtils] Dataset ya verificado y limpio (0 modificaciones en {os.path.basename(file_path)}).")
+    else:
+        if verbose:
+            print(f"[PipelineUtils] Se limpiaron {total_changes} registros con mojibake/UTF-8 corrupto en {os.path.basename(file_path)}.")
+        if target_save_path:
+            import csv
+            df_clean.to_csv(target_save_path, sep=sep, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_MINIMAL)
+            if verbose:
+                print(f"[PipelineUtils] Archivo guardado correctamente en: {target_save_path}")
+
+    return df_clean
+
+
+def clean_all_input_csv_files(directories: list = None, verbose: bool = True) -> dict:
+    """
+    Escanea y limpia todos los archivos CSV en las carpetas de entrada y configuración del sistema.
+    Corrige problemas de codificación y sobrescribe los archivos dañados con UTF-8 corregido.
+    Si el archivo ya está limpio, no lo modifica.
+
+    Directorios predeterminados:
+      - 'Entrada'
+      - 'Requerimientos/Entrenamiento/Datos'
+      - 'Incidentes/Entrenamiento/Datos'
+      - 'Especificaciones'
+
+    Retorna un diccionario: {ruta_archivo: cantidad_de_cambios}
+    """
+    if directories is None:
+        directories = [
+            "Entrada",
+            os.path.join("Requerimientos", "Entrenamiento", "Datos"),
+            os.path.join("Incidentes", "Entrenamiento", "Datos"),
+            "Especificaciones"
+        ]
+
+    results = {}
+    if verbose:
+        print("\n" + "="*60)
+        print("  SANEAMIENTO Y CORRECCIÓN DE ARCHIVOS CSV DE ENTRADA")
+        print("="*60)
+
+    total_files = 0
+    total_cleaned = 0
+
+    for d in directories:
+        if not os.path.exists(d):
+            continue
+
+        csv_files = glob.glob(os.path.join(d, "*.csv"))
+        for csv_f in csv_files:
+            total_files += 1
+            try:
+                sep = detect_csv_separator(csv_f)
+                encodings_to_try = ['utf-8', 'latin-1', 'cp1252']
+                df = None
+                for enc in encodings_to_try:
+                    try:
+                        df = pd.read_csv(csv_f, sep=sep, encoding=enc, dtype=str, on_bad_lines='skip', engine='python')
+                        break
+                    except Exception:
+                        continue
+
+                if df is None:
+                    continue
+
+                df_clean, changes = clean_dataframe_encodings(df)
+                results[csv_f] = changes
+
+                if changes > 0:
+                    import csv
+                    df_clean.to_csv(csv_f, sep=sep, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_MINIMAL)
+                    total_cleaned += 1
+                    if verbose:
+                        print(f"  [CORREGIDO] {csv_f} -> {changes} valores corregidos.")
+                else:
+                    if verbose:
+                        print(f"  [OK / LIMPIO] {csv_f}")
+
+            except Exception as e:
+                if verbose:
+                    print(f"  [ERROR] No se pudo procesar {csv_f}: {e}")
+
+    if verbose:
+        print("="*60)
+        print(f"Resumen: {total_files} archivos inspeccionados, {total_cleaned} corregidos.")
+        print("="*60 + "\n")
+
+    return results
+
+
 
 def get_spanish_stopwords() -> set:
     """Obtiene y cachea las stopwords en español de NLTK."""
@@ -29,6 +281,7 @@ def get_spanish_stopwords() -> set:
 def clean_and_deidentify_text(text, remove_stopwords: bool = True) -> str:
     r"""
     Desidentificación y Normalización de Características Operacionales (Single Source of Truth):
+    0. Corrige previamente cualquier mojibake o daño de codificación UTF-8/Latin-1.
     1. Normaliza acentos y caracteres especiales (NFKD a ASCII).
     2. Enmascara PII directo (URLs -> 'url', emails -> 'email', fechas -> 'fecha', números largos -> 'num_largo').
     3. Remueve caracteres no alfanuméricos.
@@ -39,7 +292,8 @@ def clean_and_deidentify_text(text, remove_stopwords: bool = True) -> str:
     if text is None or pd.isna(text):
         return ""
 
-    t = str(text).lower()
+    # Paso 0: Sanitización de codificación y corrección de mojibake previa
+    t = clean_encoding_text(str(text)).lower()
     t = unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8', errors='ignore')
 
     # Desidentificación y normalización de PII
@@ -212,16 +466,29 @@ def clean_csv_file(input_path: str, output_path: str, encoding: str = "utf-8",
                    replacement: str = " ", change_separator: bool = True,
                    new_separator: str = ';'):
     """
-    Lee un archivo completo (CSV o texto), corrige saltos de línea dentro de comillas dobles
-    y opcionalmente cambia los separadores de coma a 'new_separator' fuera de comillas.
+    Lee un archivo completo (CSV o texto), corrige saltos de línea dentro de comillas dobles,
+    sanea problemas de codificación/mojibake y opcionalmente cambia los separadores de coma a 'new_separator' fuera de comillas.
     Escribe el resultado en output_path.
     """
     output_dir = os.path.dirname(output_path)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    with open(input_path, 'r', encoding=encoding, newline='') as f:
-        content = f.read()
+    content = None
+    encodings_to_try = [encoding, 'utf-8', 'latin-1', 'cp1252'] if encoding else ['utf-8', 'latin-1', 'cp1252']
+    seen = set()
+    encs = [x for x in encodings_to_try if not (x in seen or seen.add(x))]
+
+    for enc in encs:
+        try:
+            with open(input_path, 'r', encoding=enc, newline='') as f:
+                content = f.read()
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    if content is None:
+        raise ValueError(f"No fue posible leer {input_path} con las codificaciones especificadas.")
 
     # 1) Corregir saltos de línea dentro de comillas
     cleaned = fix_newlines_inside_quotes(content, replacement=replacement)
@@ -230,8 +497,12 @@ def clean_csv_file(input_path: str, output_path: str, encoding: str = "utf-8",
     if change_separator:
         cleaned = replace_commas_outside_quotes(cleaned, to_separator=new_separator)
 
-    with open(output_path, 'w', encoding=encoding, newline='') as f:
+    # 3) Saneamiento de secuencias de codificación mojibake
+    cleaned = clean_encoding_text(cleaned)
+
+    with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
         f.write(cleaned)
+
 
 
 def clean_csv_text(text: str, replacement: str = " ", change_separator: bool = True,

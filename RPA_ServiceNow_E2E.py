@@ -19,8 +19,12 @@ import webbrowser
 from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
-import pyperclip
-from Programas.PipelineUtils import archive_previous_files, get_windows_date_format, ExecutionLogger
+from Programas.PipelineUtils import (
+    archive_previous_files,
+    get_windows_date_format,
+    ExecutionLogger,
+    clean_all_input_csv_files,
+)
 
 # ==========================================
 # CONFIGURACIÓN
@@ -510,6 +514,12 @@ def run_predictions():
     print("              2. FASE DE MODELOS DE PREDICCIÓN")
     print("="*50)
     
+    # Saneamiento previo de archivos de entrada en Entrada/ (Idempotente)
+    try:
+        clean_all_input_csv_files(directories=["Entrada"], verbose=False)
+    except Exception as e:
+        print(f"Advertencia: no se pudo verificar codificación de archivos de Entrada/: {e}")
+    
     # Archivar ejecuciones anteriores en Salida/ hacia sus carpetas por fecha
     archive_previous_files(SALIDA_DIR, "*.csv")
     archive_previous_files(SALIDA_DIR, "*.txt")
@@ -835,9 +845,10 @@ def main():
     print("4. [Setup Mode] Calibrate monitor coordinates for input box and update button.")
     print("5. [Daemon Mode] Run automation continuously at a set interval (daemon loop).")
     print("6. [Periodic Mode] Run E2E pipeline periodically (both Incidents & Requirements).")
-    print("7. Exit")
+    print("7. [Clean Input Files] Saneamiento y corrección de codificación en archivos CSV de entrada.")
+    print("8. Exit")
     
-    choice = input("\nSelect an option (1-7): ").strip()
+    choice = input("\nSelect an option (1-8): ").strip()
     
     global SKIP_DOWNLOAD, DRY_RUN
     
@@ -944,6 +955,9 @@ def main():
                     break
         
     elif choice == '7':
+        clean_all_input_csv_files(verbose=True)
+        
+    elif choice == '8':
         print("Exiting. Have a great day!")
         return
         

@@ -41,8 +41,11 @@ Este sistema utiliza modelos de Machine Learning avanzados para predecir la cate
   - Captura estándar de `stdout` y `stderr` hacia la consola y archivos `.log` fechados.
   - Archivamiento automático de ejecuciones y logs anteriores hacia carpetas `Salida/YYYY-MM-DD/`.
   - Soporte de entorno `DISABLE_EXECUTION_LOGGER=1` para evitar logs duplicados durante ejecuciones orquestadas.
-- **Utilidades del Pipeline, Limpieza de Datos y Formato de Fecha OS (`PipelineUtils.py`)**:
-  - Corrección de registros CSV multilínea encerrados en comillas dobles (saltos de línea internos).
+- **Utilidades del Pipeline, Saneamiento de Codificación y Formato de Fecha OS (`PipelineUtils.py`)**:
+  - Saneamiento y corrección de secuencias corruptas de codificación UTF-8 / Latin-1 / cp1252 (mojibake simple, doble y multinivel) con idempotencia estricta (`clean_encoding_text`, `clean_dataset_encodings`, `clean_all_input_csv_files`).
+  - Saneamiento previo automático de los archivos de `Entrada/` antes de cualquier inferencia/intervención, evitando discrepancias de vocabulario en predicción.
+  - Funcionalidad de inspección y corrección bajo demanda desde el menú principal de automatización RPA.
+  - Corrección de registros CSV multilínea encerrados en comillas dobles (saltos de línea internos) y normalización de delimitadores.
   - Detección automática del formato de fecha corta de Windows (`sShortDate` vía Registro de Windows).
 - **Reporte Acumulativo de Asignaciones**:
   - Histórico persistente en `Salida/reporte_detalle_asignaciones.csv` con registro de asignación previa (`original_assigned_to`), asignada (`predicted_assigned_to`), fecha/hora y modelo/regla aplicada.
@@ -203,16 +206,29 @@ py RPA_ServiceNow_DOM_E2E.py
 4. **Solo REQUERIMIENTOS**: Solo Actualizar DOM (usando la última predicción en `Salida/`).
 5. **Ejecución Completa**: Procesa Incidentes y Requerimientos de inicio a fin.
 6. **Ejecución Completa Periódica**: Modo bucle daemon que repite la automatización según un intervalo en minutos (ej. 30 min).
-7. **Salir**.
+7. **Limpiar y corregir codificación de archivos CSV**: Sanea y sobrescribe de forma corregida cualquier archivo CSV con mojibake o errores de codificación en `Entrada/`, `Datos/` y `Especificaciones/`.
+8. **Salir**.
 
 ### 5. Ejecutar Orquestador RPA ServiceNow (Modo Coordenadas de Pantalla)
 ```bash
 py RPA_ServiceNow_E2E.py
 ```
+*(Incluye las mismas opciones de orquestación, ejecución periódica y la opción 7 para saneamiento de archivos de entrada)*.
 
 ---
 
 ## Configuration & Feature Details
+
+### Saneamiento y Corrección de Codificación de Archivos CSV (`PipelineUtils.py`)
+- **Problema de codificación (Mojibake):** Los archivos exportados desde ServiceNow o repositorios históricos bancarios combinan codificaciones (ANSI, Latin-1, Windows-1252 y secuencias UTF-8 mal interpretadas), introduciendo corrupciones multinivel como `Ã³` $\rightarrow$ `ó`, `Ã©` $\rightarrow$ `é`, `Ã\x91` $\rightarrow$ `Ñ`, `Ã\x92` $\rightarrow$ `Ó`, `Ã\x83Â³` $\rightarrow$ `ó`, etc. Esto fragmenta el vocabulario en la vectorización TF-IDF (ej. `"informaciÃ³n"` se convertía en `"informacia3n"` en lugar de `"informacion"`).
+- **Componentes implementados:**
+  - `clean_encoding_text(text)`: Saneamiento multinivel de cadenas con idempotencia garantizada (`clean_encoding_text(clean) == clean`).
+  - `clean_dataframe_encodings(df)`: Sanea DataFrames columna por columna e identifica el número exacto de correcciones efectuadas.
+  - `clean_dataset_encodings(filepath)`: Procesa un archivo CSV preservando su separador original (`,` o `;`) y exportando en `utf-8-sig`. Si el dataset ya está limpio, **no lo modifica**.
+  - `clean_all_input_csv_files(directories)`: Escanea en lote `Entrada/`, `Requerimientos/Entrenamiento/Datos/`, `Incidentes/Entrenamiento/Datos/` y `Especificaciones/`, sobrescribiendo corregidos solo los archivos que presenten anomalías.
+- **Ejecución Preventiva Antes de Intervención:**
+  - Integrado de forma transparente al inicio de `run_predictions()` en los orquestadores RPA (`RPA_ServiceNow_DOM_E2E.py` y `RPA_ServiceNow_E2E.py`), sanitizando preventivamente cualquier archivo recién descargado en `Entrada/` antes de ejecutar los modelos.
+  - Disponible para ejecución manual en cualquier momento mediante la **Opción 7** del menú principal.
 
 ### Sistema de Logging y Registro (`ExecutionLogger`)
 - Implementado en `Programas/PipelineUtils.py`.

@@ -22,7 +22,12 @@ from datetime import datetime, timedelta
 import pandas as pd
 import pyautogui
 import pyperclip
-from Programas.PipelineUtils import archive_previous_files, get_windows_date_format, ExecutionLogger
+from Programas.PipelineUtils import (
+    archive_previous_files,
+    get_windows_date_format,
+    ExecutionLogger,
+    clean_all_input_csv_files,
+)
 
 # ==========================================
 # CONFIGURACIÓN
@@ -412,6 +417,12 @@ def run_predictions(run_incidents=True, run_requirements=True):
     print("              2. FASE DE MODELOS DE PREDICCIÓN")
     print("="*50)
     
+    # Saneamiento previo de archivos de entrada en Entrada/ (Idempotente)
+    try:
+        clean_all_input_csv_files(directories=["Entrada"], verbose=False)
+    except Exception as e:
+        print(f"Advertencia: no se pudo verificar codificación de archivos de Entrada/: {e}")
+    
     archive_previous_files(SALIDA_DIR, "*.csv")
     archive_previous_files(SALIDA_DIR, "*.txt")
     archive_previous_files(SALIDA_DIR, "*.log")
@@ -768,9 +779,10 @@ def main():
     print("4. Solo REQUERIMIENTOS: Solo Actualizar DOM (usando última predicción)")
     print("5. Ejecución Completa (Incidentes + Requerimientos)")
     print("6. Ejecución Completa Periódica (Incidentes + Requerimientos)")
-    print("7. Salir")
+    print("7. Limpiar y corregir codificación de archivos CSV (Entrada, Datos, Especificaciones)")
+    print("8. Salir")
     
-    choice = input("\nSeleccione una opción (1-7): ").strip()
+    choice = input("\nSeleccione una opción (1-8): ").strip()
     
     if choice == '1':
         with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_dom_incidentes"):
@@ -871,6 +883,8 @@ def main():
                     print("\nAutomatización detenida por el usuario (Ctrl+C). Saliendo del ciclo.")
                     break
     elif choice == '7':
+        clean_all_input_csv_files(verbose=True)
+    elif choice == '8':
         print("Saliendo...")
         sys.exit(0)
     else:
