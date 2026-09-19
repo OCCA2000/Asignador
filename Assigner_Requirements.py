@@ -188,9 +188,13 @@ def calculate_resolution_date(opened_at_str):
 
 # ── Predicción y asignación ──────────────────────────────────────────────────────
 
-def predict_requirement_assignments(df_requirements, balancer, model_type='supervised'):
+def predict_requirement_assignments(df_requirements, balancer, model_type='supervised', architecture='hnlp_mc'):
     """Clasifica requerimientos y los asigna utilizando modelos entrenados."""
-    print(f"Predicting requirement assignments using {model_type} model...")
+    if model_type == 'semisupervised':
+        arch_label = "HNLP-MC (Multi-Canal)" if architecture in ['hnlp_mc', 'hnlp'] else "TF-IDF (Baseline)"
+        print(f"Predicting requirement assignments using semisupervised model [{arch_label}]...")
+    else:
+        print(f"Predicting requirement assignments using {model_type} model...")
 
     model_path = f"Requerimientos/{model_type}_model"
 
@@ -283,18 +287,6 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
             import nltk
             from nltk.corpus import stopwords as nltk_stopwords
 
-            model_file      = f"{model_path}/modelo_Logistic_Regression.joblib"
-            vectorizer_file = f"{model_path}/vectorizer_tfidf.joblib"
-
-            if not os.path.exists(model_file) or not os.path.exists(vectorizer_file):
-                print(f"Error: no se encontraron los archivos del modelo en {model_path}.")
-                return df_requirements
-
-            model      = joblib.load(model_file)
-            vectorizer = joblib.load(vectorizer_file)
-            print(f"Model:      {model_file}")
-            print(f"Vectorizer: {vectorizer_file}")
-
             nltk.download('stopwords', quiet=True)
             spanish_stopwords = set(nltk_stopwords.words('spanish'))
 
@@ -311,22 +303,63 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
                 tokens = [t for t in text.split() if t not in spanish_stopwords]
                 return ' '.join(tokens)
 
-            # Construir texto_unificado con las columnas correspondientes
-            df_requirements['texto_unificado'] = (
-                df_requirements['short_description'].fillna('') + ' ' +
-                df_requirements['description'].fillna('')
-            )
-            df_requirements['texto_unificado'] = df_requirements['texto_unificado'].apply(clean_text)
+            def get_col(col_name):
+                if col_name in df_requirements.columns:
+                    return df_requirements[col_name].fillna('').astype(str)
+                return pd.Series('', index=df_requirements.index)
 
-            X = vectorizer.transform(df_requirements['texto_unificado'])
-            df_requirements['Clasificación'] = model.predict(X)
-            df_requirements["prediction_model_type"] = "semisupervised"
-            df_requirements["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
+            # ─────────────────────────────────────────────────────────────────
+            # RAMA A: Arquitectura HNLP-MC (Híbrido Multi-Canal)
+            # ─────────────────────────────────────────────────────────────────
+            if architecture in ['hnlp_mc', 'hnlp']:
+                pipeline_file = f"{model_path}/pipeline_HNLP_MC.joblib"
+                if not os.path.exists(pipeline_file):
+                    print(f"Error: no se encontró {pipeline_file}.")
+                    return df_requirements
+
+                pipeline = joblib.load(pipeline_file)
+
+                # Preparar los 3 canales de entrada para el ColumnTransformer
+                df_canales = pd.DataFrame(index=df_requirements.index)
+                df_canales['texto_solicitud'] = (get_col('short_description') + ' ' + get_col('description')).apply(clean_text)
+                df_canales['cargo_solicitante'] = get_col('requested_for.title').replace('', 'desconocido').apply(clean_text)
+                df_canales['empresa'] = get_col('requested_for.company').replace('', 'DESCONOCIDO')
+
+                df_requirements['Clasificación'] = pipeline.predict(df_canales)
+                df_requirements["prediction_model_type"] = "semisupervised_hnlp_mc"
+                df_requirements["prediction_model_name"] = "pipeline_HNLP_MC.joblib"
+                nombre_display = "HNLP-MC (Híbrido Multi-Canal - LinearSVC)"
+
+            # ─────────────────────────────────────────────────────────────────
+            # RAMA B: Línea Base TF-IDF (Canal Textual Único)
+            # ─────────────────────────────────────────────────────────────────
+            else:
+                model_file      = f"{model_path}/modelo_Logistic_Regression.joblib"
+                vectorizer_file = f"{model_path}/vectorizer_tfidf.joblib"
+
+                if not os.path.exists(model_file) or not os.path.exists(vectorizer_file):
+                    print(f"Error: no se encontraron los archivos del modelo en {model_path}.")
+                    return df_requirements
+
+                model      = joblib.load(model_file)
+                vectorizer = joblib.load(vectorizer_file)
+
+                df_requirements['texto_unificado'] = (
+                    get_col('short_description') + ' ' +
+                    get_col('description') + ' ' +
+                    get_col('requested_for.title') + ' ' +
+                    get_col('requested_for.company')
+                ).apply(clean_text)
+
+                X = vectorizer.transform(df_requirements['texto_unificado'])
+                df_requirements['Clasificación'] = model.predict(X)
+                df_requirements["prediction_model_type"] = "semisupervised_tfidf"
+                df_requirements["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
+                nombre_display = "TF-IDF (Baseline - Logistic Regression)"
 
             print(f"\n{'='*55}")
-            print(f"  MODELO: Logistic Regression (semi-supervisado)")
+            print(f"  MODELO: {nombre_display}")
             print(f"  Tickets procesados : {len(df_requirements)}")
-            print(f"  Features TF-IDF    : {X.shape[1]}")
             print(f"{'='*55}")
 
             print("\n[Clasificación predicha por el modelo]\n")
@@ -334,10 +367,9 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
             for _, row in df_requirements.iterrows():
                 ticket_id = row[id_col] if id_col else "—"
                 desc = str(row.get('short_description', ''))[:60]
+                desc_safe = desc.encode('ascii', errors='replace').decode('ascii')
                 predicted_class = row['Clasificación']
-                text = str(row.get('texto_unificado', ''))[:50]
-                print(f"  {ticket_id}  |  {predicted_class:<40}  |  {desc}")
-                print(f"  {'':^10}     texto: {text}")
+                print(f"  {ticket_id}  |  {predicted_class:<40}  |  {desc_safe}")
 
             print(f"\n[Distribución de clases predichas]")
             for predicted_class, count in df_requirements['Clasificación'].value_counts().items():
@@ -465,8 +497,16 @@ def main():
         users_path="Especificaciones/Grupos - Usuarios.csv",
     )
 
+    # Realizar predicciones (usando modelos entrenados)
+    # model_type: 'supervised' | 'semisupervised'
+    # architecture (solo para semisupervised): 'hnlp_mc' (default) | 'tfidf'
     print("Making assignment predictions for requirements...")
-    df_requirements = predict_requirement_assignments(df_requirements, balancer, model_type='semisupervised')
+    df_requirements = predict_requirement_assignments(
+        df_requirements,
+        balancer,
+        model_type='semisupervised',
+        architecture='hnlp_mc'
+    )
 
     generate_assignment_reports(df_requirements, timing, balancer)
 
