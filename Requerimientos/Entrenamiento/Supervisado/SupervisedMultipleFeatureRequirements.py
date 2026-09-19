@@ -13,12 +13,12 @@ import joblib
 
 CSV_PATH = "../Datos/requerimientos_depurado.csv"
 
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+from Programas.PipelineUtils import clean_and_deidentify_text
+
 def normalize_text(s: str) -> str:
-    if not isinstance(s, str): return ""
-    s = s.strip().lower()
-    s = unicodedata.normalize("NFKC", s)
-    s = re.sub(r"\s+", " ", s)
-    return s
+    return clean_and_deidentify_text(s, remove_stopwords=False)
 
 def build_text(row):
     # mapea app primero para dar señal fuerte

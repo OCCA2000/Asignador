@@ -1,10 +1,66 @@
 import glob
 import os
+import re
 import shutil
 import sys
 import traceback
+import unicodedata
 from datetime import datetime
 import pandas as pd
+
+# Cache global de stopwords para optimizar rendimiento
+_SPANISH_STOPWORDS = None
+
+
+def get_spanish_stopwords() -> set:
+    """Obtiene y cachea las stopwords en español de NLTK."""
+    global _SPANISH_STOPWORDS
+    if _SPANISH_STOPWORDS is None:
+        try:
+            import nltk
+            from nltk.corpus import stopwords as nltk_stopwords
+            nltk.download('stopwords', quiet=True)
+            _SPANISH_STOPWORDS = set(nltk_stopwords.words('spanish'))
+        except Exception:
+            _SPANISH_STOPWORDS = set()
+    return _SPANISH_STOPWORDS
+
+
+def clean_and_deidentify_text(text, remove_stopwords: bool = True) -> str:
+    r"""
+    Desidentificación y Normalización de Características Operacionales (Single Source of Truth):
+    1. Normaliza acentos y caracteres especiales (NFKD a ASCII).
+    2. Enmascara PII directo (URLs -> 'url', emails -> 'email', fechas -> 'fecha', números largos -> 'num_largo').
+    3. Remueve caracteres no alfanuméricos.
+    4. Remueve tokens numéricos puros (\b\d+\b) y códigos alfanuméricos con dígitos.
+    5. Remueve tokens residuales de 1 a 2 caracteres.
+    6. Opcionalmente filtra stopwords en español.
+    """
+    if text is None or pd.isna(text):
+        return ""
+
+    t = str(text).lower()
+    t = unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8', errors='ignore')
+
+    # Desidentificación y normalización de PII
+    t = re.sub(r'(https?://\S+|www\.\S+)', ' url ', t)
+    t = re.sub(r'\b[\w\.-]+@[\w\.-]+\.\w+\b', ' email ', t)
+    t = re.sub(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', ' fecha ', t)
+    t = re.sub(r'\b\d{7,}\b', ' num_largo ', t)
+
+    # Remoción de signos y ruido residual
+    t = re.sub(r'[^a-zA-Z0-9\s]', ' ', t)
+    t = re.sub(r'\b\d+\b', ' ', t)
+    t = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', t)
+    t = re.sub(r'\b\w{1,2}\b', ' ', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+
+    if remove_stopwords:
+        sw = get_spanish_stopwords()
+        tokens = [token for token in t.split() if token not in sw]
+        return ' '.join(tokens)
+
+    return t
 
 
 def fix_newlines_inside_quotes(text: str, replacement: str = " ") -> str:

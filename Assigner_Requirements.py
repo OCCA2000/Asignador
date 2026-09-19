@@ -1,4 +1,11 @@
-from Programas.PipelineUtils import clean_csv_file, get_output_path_date, get_windows_date_format, ExecutionLogger, generate_assignation_detail_report
+from Programas.PipelineUtils import (
+    clean_csv_file,
+    get_output_path_date,
+    get_windows_date_format,
+    ExecutionLogger,
+    generate_assignation_detail_report,
+    clean_and_deidentify_text,
+)
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -94,22 +101,7 @@ _PREFIX_REGEX = re.compile(
 
 
 def _normalize_text_req(texto):
-    if pd.isna(texto):
-        return ''
-    t = str(texto).strip().lower()
-    t = unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('utf-8', errors='ignore')
-    t = re.sub(r'(https?://\S+|www\.\S+)', ' url ', t)
-    t = re.sub(r'\b[\w\.-]+@[\w\.-]+\.\w+\b', ' email ', t)
-    t = re.sub(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', ' fecha ', t)
-    t = re.sub(r'\b\d{7,}\b', ' num_largo ', t)
-    t = re.sub(r'\b\d+\b', ' num ', t)
-    t = re.sub(r'[_\-=/\\|()[\]{},;:]+', ' ', t)
-    t = re.sub(r'[^\w\s]', ' ', t)
-    t = re.sub(r'\s+', ' ', t).strip()
-    t = re.sub(r'(.)\1{3,}', ' ', t)
-    t = re.sub(r'[^a-z0-9\s]', ' ', t)
-    t = re.sub(r'\s+', ' ', t).strip()
-    return t
+    return clean_and_deidentify_text(texto, remove_stopwords=False)
 
 
 def _strip_boilerplate(texto):
@@ -287,21 +279,7 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
             import nltk
             from nltk.corpus import stopwords as nltk_stopwords
 
-            nltk.download('stopwords', quiet=True)
-            spanish_stopwords = set(nltk_stopwords.words('spanish'))
-
-            def clean_text(text):
-                if pd.isnull(text):
-                    return ""
-                text = str(text).lower()
-                text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
-                text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
-                text = re.sub(r'\b\d+\b', ' ', text)
-                text = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', text)
-                text = re.sub(r'\b\w{1,2}\b', ' ', text)
-                text = re.sub(r'\s+', ' ', text).strip()
-                tokens = [t for t in text.split() if t not in spanish_stopwords]
-                return ' '.join(tokens)
+            clean_text = clean_and_deidentify_text
 
             def get_col(col_name):
                 if col_name in df_requirements.columns:

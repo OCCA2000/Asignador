@@ -1,4 +1,10 @@
-from Programas.PipelineUtils import clean_csv_file, get_output_path_date, ExecutionLogger, generate_assignation_detail_report
+from Programas.PipelineUtils import (
+    clean_csv_file,
+    get_output_path_date,
+    ExecutionLogger,
+    generate_assignation_detail_report,
+    clean_and_deidentify_text,
+)
 from Programas.Trainer import save_predictions_to_categorized_dataset
 import os
 import pandas as pd
@@ -21,15 +27,8 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             pipeline = joblib.load(f"{model_path}/assigned_to_tfidf_svm.joblib")
             label_encoder = joblib.load(f"{model_path}/label_encoder.joblib")
             
-            # Preparar características de texto (igual que en entrenamiento)
-            import re, unicodedata
-            
             def normalize_text(s):
-                if not isinstance(s, str): return ""
-                s = s.strip().lower()
-                s = unicodedata.normalize("NFKC", s)
-                s = re.sub(r"\s+", " ", s)
-                return s
+                return clean_and_deidentify_text(s, remove_stopwords=False)
             
             def build_text(row):
                 parts = [
@@ -75,25 +74,7 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
     
     elif model_type == 'semisupervised':
         try:
-            import re, unicodedata
-            import nltk
-            from nltk.corpus import stopwords as nltk_stopwords
- 
-            nltk.download('stopwords', quiet=True)
-            spanish_stopwords = set(nltk_stopwords.words('spanish'))
- 
-            def clean_text(text):
-                if pd.isnull(text):
-                    return ""
-                text = str(text).lower()
-                text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
-                text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
-                text = re.sub(r'\b\d+\b', ' ', text)
-                text = re.sub(r'\b[a-z]*\d+[a-z0-9]*\b', ' ', text)
-                text = re.sub(r'\b\w{1,2}\b', ' ', text)
-                text = re.sub(r'\s+', ' ', text).strip()
-                tokens = [t for t in text.split() if t not in spanish_stopwords]
-                return ' '.join(tokens)
+            clean_text = clean_and_deidentify_text
  
             def get_col(col_name):
                 if col_name in df_incidents.columns:
