@@ -179,7 +179,10 @@ def clean_dataset_encodings(file_path: str, output_path: str = None, sep: str = 
             print(f"[PipelineUtils] Se limpiaron {total_changes} registros con mojibake/UTF-8 corrupto en {os.path.basename(file_path)}.")
         if target_save_path:
             import csv
-            df_clean.to_csv(target_save_path, sep=sep, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_MINIMAL)
+            try:
+                df_clean.to_csv(target_save_path, sep=sep, index=False, encoding='latin-1', quoting=csv.QUOTE_MINIMAL)
+            except UnicodeEncodeError:
+                df_clean.to_csv(target_save_path, sep=sep, index=False, encoding='utf-8', quoting=csv.QUOTE_MINIMAL)
             if verbose:
                 print(f"[PipelineUtils] Archivo guardado correctamente en: {target_save_path}")
 
@@ -243,7 +246,10 @@ def clean_all_input_csv_files(directories: list = None, verbose: bool = True) ->
 
                 if changes > 0:
                     import csv
-                    df_clean.to_csv(csv_f, sep=sep, index=False, encoding='utf-8-sig', quoting=csv.QUOTE_MINIMAL)
+                    try:
+                        df_clean.to_csv(csv_f, sep=sep, index=False, encoding='latin-1', quoting=csv.QUOTE_MINIMAL)
+                    except UnicodeEncodeError:
+                        df_clean.to_csv(csv_f, sep=sep, index=False, encoding='utf-8', quoting=csv.QUOTE_MINIMAL)
                     total_cleaned += 1
                     if verbose:
                         print(f"  [CORREGIDO] {csv_f} -> {changes} valores corregidos.")
