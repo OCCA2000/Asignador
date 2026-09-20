@@ -574,17 +574,28 @@ class TeeStream:
 
     def write(self, message):
         if self.original_stream:
-            self.original_stream.write(message)
-            self.original_stream.flush()
+            try:
+                self.original_stream.write(message)
+            except Exception:
+                pass
         if self.log_file and not self.log_file.closed:
-            self.log_file.write(message)
-            self.log_file.flush()
+            try:
+                self.log_file.write(message)
+                self.log_file.flush()
+            except Exception:
+                pass
 
     def flush(self):
         if self.original_stream:
-            self.original_stream.flush()
+            try:
+                self.original_stream.flush()
+            except Exception:
+                pass
         if self.log_file and not self.log_file.closed:
-            self.log_file.flush()
+            try:
+                self.log_file.flush()
+            except Exception:
+                pass
 
     def isatty(self):
         return getattr(self.original_stream, 'isatty', lambda: False)()

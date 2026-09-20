@@ -406,8 +406,8 @@ def run_subprocess_logged(cmd, cwd=None):
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd, env=env_vars)
     for line in process.stdout:
         sys.stdout.write(line)
-        sys.stdout.flush()
     process.wait()
+    sys.stdout.flush()
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, cmd)
 
