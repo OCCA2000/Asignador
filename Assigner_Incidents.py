@@ -209,7 +209,7 @@ def generate_assignment_reports(df_incidents, timing, balancer=None):
     
     # Guardar predicciones de incidentes
     if "predicted_assigned_to" in df_incidents.columns:
-        df_incidents.to_csv(incident_output, sep=';', index=False, encoding='latin-1')
+        df_incidents.to_csv(incident_output, sep=';', index=False, encoding='utf-8-sig')
         print(f"Incident assignments saved to: {incident_output}")
     
     # Generar reporte acumulativo consolidado
@@ -252,7 +252,7 @@ def load_and_clean_data():
     clean_csv_file(
         input_path="Entrada/incident.csv",
         output_path=output_path,
-        encoding="latin-1",
+        encoding="utf-8-sig",
         replacement=" ",
         change_separator=True,
         new_separator=';'
@@ -260,8 +260,10 @@ def load_and_clean_data():
     
     # Cargar datos limpios
     df_incidents = pd.read_csv(output_path, sep=';', dtype=str, engine='python',
-                     on_bad_lines='skip', encoding='latin-1')
+                     on_bad_lines='skip', encoding='utf-8-sig')
     
+    import re
+    df_incidents.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)) for c in df_incidents.columns]
     original_columns = list(df_incidents.columns)
     
     # Preservar el valor asignado previo original antes de predecir

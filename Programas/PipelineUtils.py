@@ -40,7 +40,10 @@ MOJIBAKE_REPLACEMENTS = [
     ('Â\xa0', ' '), ('\xa0', ' '), ('Â ', ' '),
 
     # 5. Comillas y guiones aislados cp1252 (después de resolver pares con Ã)
-    ('\x91', "'"), ('\x92', "'"), ('\x93', '"'), ('\x94', '"'), ('\x96', '-'), ('\x97', '-')
+    ('\x91', "'"), ('\x92', "'"), ('\x93', '"'), ('\x94', '"'), ('\x96', '-'), ('\x97', '-'),
+
+    # 6. Marcadores BOM (Byte Order Mark) y mojibake UTF-8 decodificado como Latin-1
+    ('ï»¿', ''), ('\ufeff', '')
 ]
 
 
@@ -60,7 +63,7 @@ def clean_encoding_text(text: str) -> str:
     # 1. Bypass rápido si el texto no contiene secuencias de mojibake ni caracteres sospechosos
     has_mojibake = any(c in t for c in (
         'Ã', 'Â', 'â', 'ã', 'ƒ', '\x81', '\x83', '\x89', '\x8d', '\x91', '\x92',
-        '\x93', '\x94', '\x96', '\x97', '\x9a', '\x9c', '\xa0', '\xad'
+        '\x93', '\x94', '\x96', '\x97', '\x9a', '\x9c', '\xa0', '\xad', 'ï', '\ufeff'
     ))
     if not has_mojibake:
         return t
@@ -103,6 +106,8 @@ def clean_dataframe_encodings(df: pd.DataFrame, columns: list = None) -> tuple:
         return df, 0
 
     df_clean = df.copy()
+    # Sanitizar nombres de columnas eliminando posibles marcas BOM, comillas y espacios residuales
+    df_clean.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)) for c in df_clean.columns]
     if columns is None:
         columns = list(df_clean.select_dtypes(include=['object', 'string']).columns)
 
@@ -156,7 +161,7 @@ def clean_dataset_encodings(file_path: str, output_path: str = None, sep: str = 
     if sep is None:
         sep = detect_csv_separator(file_path)
 
-    encodings_to_try = ['utf-8', 'latin-1', 'cp1252']
+    encodings_to_try = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
     df = None
     for enc in encodings_to_try:
         try:
@@ -229,7 +234,7 @@ def clean_all_input_csv_files(directories: list = None, verbose: bool = True) ->
             total_files += 1
             try:
                 sep = detect_csv_separator(csv_f)
-                encodings_to_try = ['utf-8', 'latin-1', 'cp1252']
+                encodings_to_try = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
                 df = None
                 for enc in encodings_to_try:
                     try:
@@ -481,7 +486,12 @@ def clean_csv_file(input_path: str, output_path: str, encoding: str = "utf-8",
         os.makedirs(output_dir, exist_ok=True)
 
     content = None
-    encodings_to_try = [encoding, 'utf-8', 'latin-1', 'cp1252'] if encoding else ['utf-8', 'latin-1', 'cp1252']
+    if encoding and encoding.lower() in ('utf-8-sig', 'utf-8'):
+        encodings_to_try = [encoding, 'utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
+    elif encoding:
+        encodings_to_try = ['utf-8-sig', encoding, 'utf-8', 'latin-1', 'cp1252']
+    else:
+        encodings_to_try = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
     seen = set()
     encs = [x for x in encodings_to_try if not (x in seen or seen.add(x))]
 
@@ -495,6 +505,12 @@ def clean_csv_file(input_path: str, output_path: str, encoding: str = "utf-8",
 
     if content is None:
         raise ValueError(f"No fue posible leer {input_path} con las codificaciones especificadas.")
+
+    # 0) Descartar BOM inicial si quedó residual
+    if content.startswith('\ufeff'):
+        content = content[1:]
+    elif content.startswith('ï»¿'):
+        content = content[3:]
 
     # 1) Corregir saltos de línea dentro de comillas
     cleaned = fix_newlines_inside_quotes(content, replacement=replacement)

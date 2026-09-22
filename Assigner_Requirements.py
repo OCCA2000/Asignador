@@ -394,7 +394,7 @@ def generate_assignment_reports(df_requirements, timing, balancer=None):
     if "predicted_assigned_to" in df_requirements.columns:
         output_cols = [c for c in df_requirements.columns if not c.endswith('_norm')
                        and c not in ('short_core', 'desc_core', 'texto_limpio', 'original_assigned_to')]
-        df_requirements[output_cols].to_csv(output_path, sep=';', index=False, encoding='latin-1')
+        df_requirements[output_cols].to_csv(output_path, sep=';', index=False, encoding='utf-8-sig')
         print(f"Requirement assignments saved to: {output_path}")
 
     # Generar reporte acumulativo consolidado
@@ -438,7 +438,7 @@ def load_and_clean_data():
     clean_csv_file(
         input_path="Entrada/sc_req_item.csv",
         output_path=output_path,
-        encoding="latin-1",
+        encoding="utf-8-sig",
         replacement=" ",
         change_separator=True,
         new_separator=';'
@@ -446,9 +446,11 @@ def load_and_clean_data():
 
     df_requirements = pd.read_csv(
         output_path,
-        sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='latin-1'
+        sep=';', dtype=str, engine='python', on_bad_lines='skip', encoding='utf-8-sig'
     )
 
+    import re
+    df_requirements.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)) for c in df_requirements.columns]
     original_columns = list(df_requirements.columns)
 
     # Preservar el valor asignado previo original antes de predecir

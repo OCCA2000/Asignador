@@ -551,7 +551,18 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
         return
         
     print(f"\nProcessing assignments from: {csv_path}")
-    df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
+    df = None
+    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+        try:
+            df = pd.read_csv(csv_path, sep=';', encoding=enc, dtype=str)
+            break
+        except Exception:
+            continue
+    if df is None:
+        df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
+
+    import re
+    df.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df.columns]
     
     # Identificar nombres de columnas
     num_col = next((c for c in ['number', 'Number', 'id'] if c in df.columns), None)

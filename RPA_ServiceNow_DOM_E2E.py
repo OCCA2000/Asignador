@@ -627,7 +627,18 @@ def update_tickets_in_servicenow_dom(csv_path, is_requirement=False):
     app_sys_ids = config_params.get("configuration_items", {})
     
     print(f"\nProcessing assignments DOM-mode from: {csv_path}")
-    df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
+    df = None
+    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+        try:
+            df = pd.read_csv(csv_path, sep=';', encoding=enc, dtype=str)
+            break
+        except Exception:
+            continue
+    if df is None:
+        df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
+
+    import re
+    df.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df.columns]
     
     num_col = next((c for c in ['number', 'Number', 'id'] if c in df.columns), None)
     assign_col = 'predicted_assigned_to'
