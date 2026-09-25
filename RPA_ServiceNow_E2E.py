@@ -25,6 +25,8 @@ from Programas.PipelineUtils import (
     get_windows_date_format,
     ExecutionLogger,
     clean_all_input_csv_files,
+    check_file_freshness,
+    delete_unprocessed_input_files,
 )
 
 # ==========================================
@@ -396,37 +398,51 @@ def get_downloads_folder():
     """Resuelve la ruta a la carpeta Descargas por defecto del usuario."""
     return os.path.join(os.path.expanduser("~"), "Downloads")
 
-def move_latest_download(pattern, destination_name):
-    """Busca la descarga más reciente que coincida con un patrón y la mueve a Entrada/"""
+def move_latest_download(pattern, destination_name, min_mtime=None, max_age_seconds=None, timeout_seconds=None):
+    """
+    Busca la descarga más reciente que coincida con un patrón en Descargas,
+    valida que sea reciente (frescura/timestamp) y la mueve a Entrada/destination_name.
+    Si se proporciona timeout_seconds, sondea periódicamente hasta encontrar un archivo reciente o agotarse el tiempo.
+    """
     downloads_dir = get_downloads_folder()
     search_path = os.path.join(downloads_dir, pattern)
-    files = glob.glob(search_path)
     
-    if not files:
-        print(f"No se encontraron archivos en Descargas que coincidan con: {pattern}")
-        return False
-        
-    # Ordenar archivos por fecha de modificación (más reciente primero)
-    files.sort(key=os.path.getmtime, reverse=True)
-    latest_file = files[0]
-    
-    dest_path = os.path.join(ENTRADA_DIR, destination_name)
-    os.makedirs(ENTRADA_DIR, exist_ok=True)
-    
-    # Remove destination file if it already exists to avoid conflicts
-    if os.path.exists(dest_path):
-        try:
-            os.remove(dest_path)
-        except Exception:
-            pass
+    poll_timeout = float(timeout_seconds) if timeout_seconds is not None else 0.0
+    poll_interval = 1.0
+    start_poll = time.time()
+    last_reason = "No se encontraron archivos coincidentes"
 
-    try:
-        shutil.move(latest_file, dest_path)
-        print(f"Archivo movido: {latest_file} -> {dest_path}")
-        return True
-    except Exception as e:
-        print(f"Error al mover el archivo {latest_file}: {e}")
-        return False
+    while True:
+        files = glob.glob(search_path)
+        if files:
+            files.sort(key=os.path.getmtime, reverse=True)
+            latest_file = files[0]
+            
+            is_fresh, reason = check_file_freshness(latest_file, min_mtime=min_mtime, max_age_seconds=max_age_seconds)
+            last_reason = reason
+            if is_fresh:
+                dest_path = os.path.join(ENTRADA_DIR, destination_name)
+                os.makedirs(ENTRADA_DIR, exist_ok=True)
+                if os.path.exists(dest_path):
+                    try:
+                        os.remove(dest_path)
+                    except Exception:
+                        pass
+                try:
+                    shutil.move(latest_file, dest_path)
+                    print(f"Archivo descargado reciente movido con éxito: {latest_file} -> {dest_path}")
+                    return True
+                except Exception as e:
+                    print(f"[ERROR] Error al mover el archivo {latest_file}: {e}")
+                    return False
+        
+        elapsed = time.time() - start_poll
+        if elapsed >= poll_timeout:
+            break
+        time.sleep(min(poll_interval, poll_timeout - elapsed))
+
+    print(f"[ERROR] No se obtuvo una descarga válida y reciente para '{pattern}'. Razón: {last_reason}")
+    return False
 
 def find_latest_output_file(pattern, min_mtime=None):
     """Devuelve la ruta al CSV de predicción más reciente en la raíz de Salida/."""
@@ -444,14 +460,18 @@ def find_latest_output_file(pattern, min_mtime=None):
 # ==========================================
 # EJECUTORES E2E
 # ==========================================
-def run_downloads():
-    """Maneja la descarga de tickets desde ServiceNow."""
+def run_downloads(download_incidents=True, download_requirements=True, min_mtime=None):
+    """Maneja la descarga de tickets desde ServiceNow con validación estricta de timestamps y eliminación preventiva."""
     show_pre_start_notification(NOTIFICATION_COUNTDOWN_SECONDS)
     print("\n" + "="*50)
     print("              1. FASE DE DESCARGA DE CSV")
     print("="*50)
     
     config_params = load_config_parameters()
+    max_age_seconds = config_params.get("max_download_age_seconds", 300)
+    
+    # Eliminación preventiva: borrar incident.csv y sc_req_item.csv residuales en Entrada/
+    delete_unprocessed_input_files(ENTRADA_DIR, ["incident.csv", "sc_req_item.csv"])
     
     def resolve_url(url, default_url):
         if not url:
@@ -465,38 +485,73 @@ def run_downloads():
                 url = url + "?CSV"
         return url
     
+    download_errors = []
+    
     # 1. Incidentes
-    default_incident = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
-    incident_url = resolve_url(config_params.get("incident_download_url"), default_incident)
-    print(f"Abriendo lista de incidentes en navegador independiente: {incident_url}")
-    open_url_in_browser(incident_url)
-    print("Se abrió una ventana del navegador.")
-    print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
-    if DRY_RUN:
-        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
-    else:
-        print(f"Esperando {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
-        time.sleep(DOWNLOAD_WAIT_TIME)
-    
-    # Mover descarga
-    if not move_latest_download("*incident*.csv", "incident.csv"):
-        print("Advertencia: No se pudo encontrar/mover automáticamente el CSV de incidentes. Asegúrese de que exista Entrada/incident.csv.")
+    if download_incidents:
+        inc_start = time.time()
+        effective_min_mtime = min_mtime if min_mtime is not None else inc_start
+        default_incident = f"{SERVICENOW_BASE_URL}/incident_list.do?sysparm_query=assignment_group=e6313131f874ee55056b262c30cbb3551^ORassignment_group=36ea16e087548210f2e1cbf80cbb35fd^assigned_toISEMPTY^stateIN1,2&CSV"
+        incident_url = resolve_url(config_params.get("incident_download_url"), default_incident)
+        print(f"Abriendo lista de incidentes en navegador independiente: {incident_url}")
+        open_url_in_browser(incident_url)
+        print("Se abrió una ventana del navegador.")
+        print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
+        if DRY_RUN:
+            input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+            wait_timeout = DOWNLOAD_WAIT_TIME
+        else:
+            print(f"Esperando hasta {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
+            wait_timeout = DOWNLOAD_WAIT_TIME
         
+        moved = move_latest_download(
+            "*incident*.csv",
+            "incident.csv",
+            min_mtime=effective_min_mtime,
+            max_age_seconds=max_age_seconds,
+            timeout_seconds=wait_timeout
+        )
+        dest_inc = os.path.join(ENTRADA_DIR, "incident.csv")
+        fresh, reason = check_file_freshness(dest_inc, min_mtime=effective_min_mtime, max_age_seconds=max_age_seconds)
+        if not moved or not fresh:
+            err = f"Descarga fallida o inválida para Incidentes ({dest_inc}): {reason if not fresh else 'No se pudo mover el archivo reciente'}"
+            print(f"[ERROR] {err}")
+            download_errors.append(err)
+            
     # 2. Requerimientos
-    default_req = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
-    req_url = resolve_url(config_params.get("requirement_download_url"), default_req)
-    print(f"\nAbriendo lista de requerimientos en navegador independiente: {req_url}")
-    open_url_in_browser(req_url)
-    print("Se abrió una ventana del navegador.")
-    print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
-    if DRY_RUN:
-        input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
-    else:
-        print(f"Esperando {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
-        time.sleep(DOWNLOAD_WAIT_TIME)
-    
-    if not move_latest_download("*sc_req_item*.csv", "sc_req_item.csv"):
-        print("Advertencia: No se pudo encontrar/mover automáticamente el CSV de requerimientos. Asegúrese de que exista Entrada/sc_req_item.csv.")
+    if download_requirements:
+        req_start = time.time()
+        effective_min_mtime = min_mtime if min_mtime is not None else req_start
+        default_req = f"{SERVICENOW_BASE_URL}/sc_req_item_list.do?sysparm_query=assignment_group=36ea16e087548210f2e1cbf80cbb35fd^ORassignment_group=e6313131f874ee55056b262c30cbb3551^state=1^assigned_toISEMPTY&CSV"
+        req_url = resolve_url(config_params.get("requirement_download_url"), default_req)
+        print(f"\nAbriendo lista de requerimientos en navegador independiente: {req_url}")
+        open_url_in_browser(req_url)
+        print("Se abrió una ventana del navegador.")
+        print("Exporte la lista a CSV si la descarga no se inicia automáticamente.")
+        if DRY_RUN:
+            input("Presione Intro una vez que el archivo se haya descargado en su carpeta de Descargas...")
+            wait_timeout = DOWNLOAD_WAIT_TIME
+        else:
+            print(f"Esperando hasta {DOWNLOAD_WAIT_TIME} segundos para que se complete la descarga...")
+            wait_timeout = DOWNLOAD_WAIT_TIME
+        
+        moved = move_latest_download(
+            "*sc_req_item*.csv",
+            "sc_req_item.csv",
+            min_mtime=effective_min_mtime,
+            max_age_seconds=max_age_seconds,
+            timeout_seconds=wait_timeout
+        )
+        dest_req = os.path.join(ENTRADA_DIR, "sc_req_item.csv")
+        fresh, reason = check_file_freshness(dest_req, min_mtime=effective_min_mtime, max_age_seconds=max_age_seconds)
+        if not moved or not fresh:
+            err = f"Descarga fallida o inválida para Requerimientos ({dest_req}): {reason if not fresh else 'No se pudo mover el archivo reciente'}"
+            print(f"[ERROR] {err}")
+            download_errors.append(err)
+
+    if download_errors:
+        full_err_msg = " | ".join(download_errors)
+        raise RuntimeError(f"Falla en la fase de descarga de ServiceNow: {full_err_msg}")
 
 def run_subprocess_logged(cmd, cwd=None):
     """Ejecuta un subproceso transmitiendo stdout/stderr a sys.stdout en tiempo real."""
@@ -798,6 +853,10 @@ def run_daemon_mode():
     global SKIP_DOWNLOAD, DRY_RUN
     DRY_RUN = daemon_dry_run
     
+    config_params = load_config_parameters()
+    max_failures = config_params.get("max_consecutive_download_failures", 3)
+    consecutive_failures = 0
+
     with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_gui_daemon"):
         while True:
             cycle_start = time.time()
@@ -807,7 +866,7 @@ def run_daemon_mode():
             try:
                 if mode_choice == '1':
                     SKIP_DOWNLOAD = False
-                    run_downloads()
+                    run_downloads(min_mtime=cycle_start)
                     run_predictions()
                     run_rpa_loop(min_mtime=cycle_start)
                 elif mode_choice == '2':
@@ -824,11 +883,22 @@ def run_daemon_mode():
                     run_rpa_loop(min_mtime=cycle_start)
                     
                 print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
+                consecutive_failures = 0
             except KeyboardInterrupt:
                 print("\nDaemon stopped by user (Ctrl+C). Exiting loop.")
                 break
             except Exception as e:
+                consecutive_failures += 1
                 print(f"\n[ERROR] Exception occurred in daemon cycle: {e}")
+                print(f"[CONTROL] Consecutive failures: {consecutive_failures} of {max_failures}")
+                
+                if consecutive_failures >= max_failures:
+                    print("\n" + "!"*60)
+                    print(f"[CRITICAL STOP] Reached maximum of {max_failures} consecutive failures.")
+                    print("Process stopped automatically until admin reviews the system state.")
+                    print("!"*60 + "\n")
+                    break
+                    
                 print("Retrying in the next cycle...")
             
             next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')
@@ -871,9 +941,12 @@ def main():
             DRY_RUN = dry_choice != 'n'
             
             cycle_start = time.time()
-            run_downloads()
-            run_predictions()
-            run_rpa_loop(min_mtime=cycle_start)
+            try:
+                run_downloads(min_mtime=cycle_start)
+                run_predictions()
+                run_rpa_loop(min_mtime=cycle_start)
+            except Exception as e:
+                print(f"\n[ERROR] Pipeline execution cancelled: {e}")
         
     elif choice == '2':
         with ExecutionLogger(SALIDA_DIR, prefix="ejecucion_gui_models"):
@@ -912,8 +985,13 @@ def main():
         
         interval_secs = int(PERIODIC_INTERVAL_MINUTES * 60)
         
+        config_params = load_config_parameters()
+        max_failures = config_params.get("max_consecutive_download_failures", 3)
+        consecutive_failures = 0
+        
         print("\n" + "="*50)
         print(f"Periodic Mode activated! Interval: {PERIODIC_INTERVAL_MINUTES} mins ({interval_secs}s)")
+        print(f"Max consecutive failures before stop: {max_failures}")
         print(f"Base Mode: {mode_choice} | Dry Run: {run_dry_run}")
         print("Press Ctrl+C in this terminal to stop the execution.")
         print("="*50 + "\n")
@@ -929,7 +1007,7 @@ def main():
                 try:
                     if mode_choice == '1':
                         SKIP_DOWNLOAD = False
-                        run_downloads()
+                        run_downloads(min_mtime=cycle_start)
                         run_predictions()
                         run_rpa_loop(min_mtime=cycle_start)
                     elif mode_choice == '2':
@@ -942,16 +1020,27 @@ def main():
                     else:
                         print("Invalid mode chosen. Defaulting to Option 1 flow.")
                         SKIP_DOWNLOAD = False
-                        run_downloads()
+                        run_downloads(min_mtime=cycle_start)
                         run_predictions()
                         run_rpa_loop(min_mtime=cycle_start)
                         
                     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Cycle finished successfully.")
+                    consecutive_failures = 0
                 except KeyboardInterrupt:
                     print("\nStopped by user (Ctrl+C). Exiting loop.")
                     break
                 except Exception as e:
+                    consecutive_failures += 1
                     print(f"\n[ERROR] Exception occurred in cycle: {e}")
+                    print(f"[CONTROL] Consecutive failures: {consecutive_failures} of {max_failures}")
+                    
+                    if consecutive_failures >= max_failures:
+                        print("\n" + "!"*60)
+                        print(f"[CRITICAL STOP] Reached maximum of {max_failures} consecutive failures.")
+                        print("Process stopped automatically until admin reviews the system state.")
+                        print("!"*60 + "\n")
+                        break
+                        
                     print("Retrying in the next cycle...")
                 
                 next_run_time = (datetime.now() + timedelta(seconds=interval_secs)).strftime('%H:%M:%S')

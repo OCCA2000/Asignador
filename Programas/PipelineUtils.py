@@ -4,6 +4,7 @@ import re
 import shutil
 import sys
 import traceback
+import time
 import unicodedata
 from datetime import datetime
 import pandas as pd
@@ -471,6 +472,76 @@ def get_output_path_date(prefix: str, base_dir: str = "Entrada", timing: str = N
 
     output_path = os.path.join(base_dir, f"{prefix}_{timing}{ext}")
     return output_path, timing
+
+
+def delete_unprocessed_input_files(base_dir: str = "Entrada", filenames: list = None) -> list:
+    """
+    Elimina directamente de base_dir los archivos residuales de entrada sin procesar
+    (por defecto 'incident.csv' y 'sc_req_item.csv') antes de una nueva descarga,
+    evitando que ejecuciones posteriores utilicen entradas previas obsoletas si la descarga falla.
+    Devuelve la lista de archivos eliminados.
+    """
+    if filenames is None:
+        filenames = ["incident.csv", "sc_req_item.csv"]
+
+    deleted = []
+    for filename in filenames:
+        filepath = os.path.join(base_dir, filename)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+                deleted.append(filepath)
+                print(f"[LIMPIEZA] Archivo de entrada residual eliminado preventivamente: {filepath}")
+            except Exception as e:
+                print(f"[ADVERTENCIA] No se pudo eliminar archivo residual {filepath}: {e}")
+    return deleted
+
+
+def check_file_freshness(filepath: str, min_mtime: float = None, max_age_seconds: float = None, tolerance_seconds: float = 15.0) -> tuple:
+    """
+    Verifica si un archivo existe y fue modificado recientemente.
+
+    Parámetros:
+      - filepath: Ruta absoluta o relativa al archivo.
+      - min_mtime: Timestamp mínimo admisible (ej. inicio del ciclo de descarga).
+      - max_age_seconds: Antigüedad máxima permitida en segundos desde el momento actual.
+      - tolerance_seconds: Margen de tolerancia para desfasajes de reloj o búferes de escritura.
+
+    Devuelve:
+      - (True, "Mensaje de éxito") si el archivo es reciente.
+      - (False, "Razón del fallo") si el archivo no existe o es demasiado antiguo.
+    """
+    if not os.path.exists(filepath):
+        return False, f"El archivo '{filepath}' no existe."
+
+    try:
+        file_mtime = os.path.getmtime(filepath)
+    except Exception as e:
+        return False, f"No se pudo consultar timestamp de '{filepath}': {e}"
+
+    file_time_str = datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
+
+    # 1. Comprobar contra min_mtime si fue especificado
+    if min_mtime is not None:
+        effective_min = min_mtime - tolerance_seconds
+        if file_mtime < effective_min:
+            min_time_str = datetime.fromtimestamp(min_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            return False, (
+                f"El archivo '{filepath}' es antiguo (timestamp: {file_time_str} < mínimo esperado: {min_time_str}). "
+                f"Se infiere que la descarga falló o se reutilizó un archivo previo."
+            )
+
+    # 2. Comprobar contra max_age_seconds si fue especificado
+    if max_age_seconds is not None and max_age_seconds > 0:
+        age_seconds = time.time() - file_mtime
+        if age_seconds > (max_age_seconds + tolerance_seconds):
+            return False, (
+                f"El archivo '{filepath}' supera la antigüedad máxima permitida "
+                f"({int(age_seconds)}s > {int(max_age_seconds)}s, última modificación: {file_time_str}). "
+                f"Se infiere que no fue descargado en esta ejecución."
+            )
+
+    return True, f"Archivo reciente y válido (timestamp: {file_time_str})."
 
 
 def clean_csv_file(input_path: str, output_path: str, encoding: str = "utf-8",
