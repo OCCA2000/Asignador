@@ -853,6 +853,91 @@ def generate_assignation_detail_report(df: pd.DataFrame, ticket_type: str, timin
     return report_path
 
 
+def get_retry_dataframe_from_assignment_report(ticket_ids: list, ticket_type: str = None, base_dir: str = "Salida") -> pd.DataFrame:
+    """
+    Busca los ticket_ids en 'Salida/reporte_detalle_asignaciones.csv' (tomando el registro
+    más reciente para cada uno) y construye un DataFrame estandarizado con las columnas:
+    ['number', 'predicted_assigned_to', 'fecha_resolucion', 'predicted_assignment_group', 'original_assigned_to', 'Ticket type']
+    listo para ser procesado por las funciones de actualización RPA.
+    """
+    if not ticket_ids:
+        return pd.DataFrame()
+
+    report_path = os.path.join(base_dir, "reporte_detalle_asignaciones.csv")
+    if not os.path.exists(report_path):
+        print(f"[VERIFICACIÓN] No se encontró el reporte histórico '{report_path}'.")
+        return pd.DataFrame()
+
+    df_rep = None
+    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+        try:
+            df_rep = pd.read_csv(report_path, sep=';', encoding=enc, dtype=str)
+            break
+        except Exception:
+            continue
+    if df_rep is None:
+        try:
+            df_rep = pd.read_csv(report_path, sep=';', encoding='latin-1', dtype=str)
+        except Exception as e:
+            print(f"[VERIFICACIÓN] Error al leer '{report_path}': {e}")
+            return pd.DataFrame()
+
+    # Normalizar columnas
+    df_rep.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df_rep.columns]
+
+    num_col = next((c for c in ['Ticket identification', 'number', 'Number', 'id'] if c in df_rep.columns), None)
+    assign_col = next((c for c in ['Person assigned', 'predicted_assigned_to', 'assigned_to'] if c in df_rep.columns), None)
+
+    if not num_col or not assign_col:
+        print(f"[VERIFICACIÓN] Columnas clave no encontradas en '{report_path}'.")
+        return pd.DataFrame()
+
+    # Normalizar IDs para búsqueda case-insensitive y sin espacios
+    target_ids_set = {str(t).strip().upper() for t in ticket_ids if t and pd.notna(t)}
+    df_rep['_id_norm'] = df_rep[num_col].astype(str).str.strip().str.upper()
+
+    matching_df = df_rep[df_rep['_id_norm'].isin(target_ids_set)].copy()
+
+    if ticket_type:
+        type_col = next((c for c in ['Ticket type', 'ticket_type'] if c in matching_df.columns), None)
+        if type_col:
+            matching_df = matching_df[matching_df[type_col].astype(str).str.lower().str.contains(ticket_type.lower())]
+
+    if matching_df.empty:
+        print(f"[VERIFICACIÓN] No se encontraron registros coincidentes para los tickets en '{report_path}'.")
+        return pd.DataFrame()
+
+    # Tomar el último registro de cada ticket (el más reciente de la última ejecución)
+    matching_df = matching_df.drop_duplicates(subset=['_id_norm'], keep='last')
+
+    res_df = pd.DataFrame()
+    res_df['number'] = matching_df[num_col]
+    res_df['predicted_assigned_to'] = matching_df[assign_col]
+
+    # fecha_resolucion / due_date
+    date_col = next((c for c in ['Predicted end date', 'fecha_resolucion', 'due_date'] if c in matching_df.columns), None)
+    if date_col:
+        res_df['fecha_resolucion'] = matching_df[date_col].fillna('')
+    else:
+        res_df['fecha_resolucion'] = ""
+
+    # Grupo asignado
+    group_col = next((c for c in ['Predicted group', 'predicted_assignment_group', 'assignment_group'] if c in matching_df.columns), None)
+    if group_col:
+        res_df['predicted_assignment_group'] = matching_df[group_col].fillna('')
+
+    # Asignado previo
+    orig_col = next((c for c in ['Previous person assigned', 'original_assigned_to'] if c in matching_df.columns), None)
+    if orig_col:
+        res_df['original_assigned_to'] = matching_df[orig_col].fillna('')
+
+    type_col = next((c for c in ['Ticket type', 'ticket_type'] if c in matching_df.columns), None)
+    if type_col:
+        res_df['Ticket type'] = matching_df[type_col]
+
+    return res_df
+
+
 def get_latest_training_dataset(ticket_type: str, kind: str = 'preparados',
                                 explicit_path: str = None,
                                 base_dir: str = None,

@@ -27,6 +27,7 @@ from Programas.PipelineUtils import (
     clean_all_input_csv_files,
     check_file_freshness,
     delete_unprocessed_input_files,
+    get_retry_dataframe_from_assignment_report,
 )
 
 # ==========================================
@@ -61,6 +62,10 @@ NOTIFICATION_COUNTDOWN_SECONDS = 5
 # Cierre automático de todo el navegador al finalizar la iteración completa del ciclo (vía Alt+F4)
 CLOSE_BROWSER_AT_END = True
 CLOSE_BROWSER_WAIT_TIME = 10.0  # Tiempo de espera personalizable en segundos antes de cerrar el navegador al final
+
+# Verificación y reasignación de tickets (solo cuando DRY_RUN = False)
+VERIFICATION_WAIT_TIME = 60.0    # Tiempo de espera en segundos antes de verificar persistencia en ServiceNow
+MAX_VERIFICATION_RETRIES = 2     # Número máximo de reintentos de reescritura
 
 _notification_shown_this_cycle = False
 
@@ -458,6 +463,22 @@ def find_latest_output_file(pattern, min_mtime=None):
     return files[0]
 
 # ==========================================
+# UTILIDADES DE DESCARGA Y NAVEGACIÓN
+# ==========================================
+def resolve_url(url, default_url):
+    """Resuelve la URL absoluta para ServiceNow asegurando el parámetro &CSV."""
+    if not url:
+        return default_url
+    if not url.startswith("http"):
+        url = f"{SERVICENOW_BASE_URL.rstrip('/')}/{url.lstrip('/')}"
+    if "CSV" not in url.upper():
+        if "?" in url:
+            url = url + "CSV" if url.endswith("&") else url + "&CSV"
+        else:
+            url = url + "?CSV"
+    return url
+
+# ==========================================
 # EJECUTORES E2E
 # ==========================================
 def run_downloads(download_incidents=True, download_requirements=True, min_mtime=None):
@@ -472,18 +493,6 @@ def run_downloads(download_incidents=True, download_requirements=True, min_mtime
     
     # Eliminación preventiva: borrar incident.csv y sc_req_item.csv residuales en Entrada/
     delete_unprocessed_input_files(ENTRADA_DIR, ["incident.csv", "sc_req_item.csv"])
-    
-    def resolve_url(url, default_url):
-        if not url:
-            return default_url
-        if not url.startswith("http"):
-            url = f"{SERVICENOW_BASE_URL.rstrip('/')}/{url.lstrip('/')}"
-        if "CSV" not in url.upper():
-            if "?" in url:
-                url = url + "CSV" if url.endswith("&") else url + "&CSV"
-            else:
-                url = url + "?CSV"
-        return url
     
     download_errors = []
     
@@ -599,39 +608,47 @@ def run_predictions():
     except subprocess.CalledProcessError as e:
         print(f"Error executing Assigner_Requirements.py: {e}")
 
-def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
+def update_tickets_in_servicenow(csv_path_or_df, coordinates, is_requirement=False):
     """Lee las asignaciones predichas y actualiza los tickets a través del control del navegador."""
-    if not csv_path or not os.path.exists(csv_path):
-        print(f"No prediction file found for processing.")
-        return
+    if csv_path_or_df is None:
+        return []
         
-    print(f"\nProcessing assignments from: {csv_path}")
-    df = None
-    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
-        try:
-            df = pd.read_csv(csv_path, sep=';', encoding=enc, dtype=str)
-            break
-        except Exception:
-            continue
-    if df is None:
-        df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
+    if isinstance(csv_path_or_df, pd.DataFrame):
+        df = csv_path_or_df.copy()
+        print(f"\nProcessing assignments from DataFrame ({len(df)} records)...")
+    else:
+        csv_path = csv_path_or_df
+        if not csv_path or not os.path.exists(csv_path):
+            print(f"No prediction file found for processing.")
+            return []
+            
+        print(f"\nProcessing assignments from: {csv_path}")
+        df = None
+        for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+            try:
+                df = pd.read_csv(csv_path, sep=';', encoding=enc, dtype=str)
+                break
+            except Exception:
+                continue
+        if df is None:
+            df = pd.read_csv(csv_path, sep=';', encoding='latin-1', dtype=str)
 
     import re
     df.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df.columns]
     
     # Identificar nombres de columnas
-    num_col = next((c for c in ['number', 'Number', 'id'] if c in df.columns), None)
-    assign_col = 'predicted_assigned_to'
+    num_col = next((c for c in ['number', 'Number', 'id', 'ticket_id', 'Ticket identification'] if c in df.columns), None)
+    assign_col = next((c for c in ['predicted_assigned_to', 'Person assigned', 'assigned_to'] if c in df.columns), None)
     
-    if not num_col or assign_col not in df.columns:
+    if not num_col or not assign_col or assign_col not in df.columns:
         print("Error: Required columns ('number' and 'predicted_assigned_to') not found in prediction output.")
-        return
+        return []
         
     tickets_to_process = df.dropna(subset=[num_col, assign_col])
     print(f"Found {len(tickets_to_process)} tickets with predicted assignments.")
     
     if len(tickets_to_process) == 0:
-        return
+        return []
         
     print("\n" + "!"*50)
     print("              RPA UI UPDATE WILL START IN 5 SECONDS")
@@ -643,6 +660,7 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
         time.sleep(1)
         
     table_name = "sc_req_item" if is_requirement else "incident"
+    processed_ticket_ids = []
     
     if is_requirement:
         assigned_to_x = coordinates["assignation_textbox_x"]
@@ -662,10 +680,10 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
         update_y = coordinates["update_y"]
         
     for idx, row in tickets_to_process.iterrows():
-        ticket_id = row[num_col]
-        assignee = row[assign_col]
+        ticket_id = str(row[num_col]).strip()
+        assignee = str(row[assign_col]).strip()
         
-        if pd.isna(assignee) or not str(assignee).strip():
+        if not assignee or assignee.lower() == 'nan':
             print(f"Skipping ticket {ticket_id}: Assignee is empty.")
             continue
             
@@ -708,6 +726,8 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
             
             # 3. Llenar cuadro de texto de Fecha de vencimiento
             due_date = row.get('fecha_resolucion')
+            if (due_date is None or pd.isna(due_date) or not str(due_date).strip()) and 'Predicted end date' in row:
+                due_date = row.get('Predicted end date')
             due_date_str = ""
             if pd.notna(due_date) and str(due_date).strip():
                 try:
@@ -774,11 +794,208 @@ def update_tickets_in_servicenow(csv_path, coordinates, is_requirement=False):
             pyautogui.click(update_x, update_y)
             print(f"Clicked 'Update/Save' button at ({update_x}, {update_y})")
             time.sleep(LOAD_TIME)
+            processed_ticket_ids.append(ticket_id)
         else:
             print(f"[DRY RUN] Bypassing click on 'Update/Save' button at ({update_x}, {update_y}). Changes not saved.")
             time.sleep(1.0)
             
     print("\nServiceNow UI update loop finished!")
+    return processed_ticket_ids
+
+
+def check_servicenow_tickets_status(ticket_ids: list, is_requirement: bool = False, timeout_seconds: float = DOWNLOAD_WAIT_TIME) -> tuple:
+    """
+    Descarga exclusivamente los tickets especificados en ticket_ids desde ServiceNow
+    usando sysparm_query=numberIN<id1>,<id2>...&CSV y verifica cuáles de ellos
+    aún no tienen asignatario (assigned_to vacío) o no figuran en la descarga.
+    
+    Devuelve (éxito: bool, lista_de_tickets_sin_asignar: list).
+    """
+    if not ticket_ids:
+        return True, []
+        
+    config_params = load_config_parameters()
+    table_name = "sc_req_item" if is_requirement else "incident"
+    pattern = "*sc_req_item*.csv" if is_requirement else "*incident*.csv"
+    dest_name = "verify_sc_req_item.csv" if is_requirement else "verify_incident.csv"
+    dest_path = os.path.join(ENTRADA_DIR, dest_name)
+    
+    # Query específico: solo los tickets asignados en este ciclo para evitar incluir tickets nuevos creados por otros usuarios
+    numbers_str = ",".join(str(t).strip() for t in ticket_ids if str(t).strip())
+    verify_url = f"{SERVICENOW_BASE_URL}/{table_name}_list.do?sysparm_query=numberIN{numbers_str}&CSV"
+    
+    print(f"\n[VERIFICACIÓN] Descargando estado de {len(ticket_ids)} {'requerimientos' if is_requirement else 'incidentes'} desde ServiceNow...")
+    print(f"URL de verificación: {verify_url}")
+    
+    check_start = time.time()
+    open_url_in_browser(verify_url)
+    
+    max_age_seconds = config_params.get("max_download_age_seconds", 300)
+    moved = move_latest_download(
+        pattern,
+        dest_name,
+        min_mtime=check_start,
+        max_age_seconds=max_age_seconds,
+        timeout_seconds=timeout_seconds
+    )
+    
+    if not moved or not os.path.exists(dest_path):
+        print(f"[ADVERTENCIA] No se pudo obtener la descarga de verificación para {table_name}. Se conservarán como pendientes.")
+        return False, list(ticket_ids)
+        
+    df = None
+    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+        try:
+            df = pd.read_csv(dest_path, sep=';', encoding=enc, dtype=str)
+            break
+        except Exception:
+            continue
+    if df is None:
+        try:
+            df = pd.read_csv(dest_path, sep=';', encoding='latin-1', dtype=str)
+        except Exception as e:
+            print(f"[ERROR] No se pudo leer archivo de verificación {dest_path}: {e}")
+            if os.path.exists(dest_path):
+                try: os.remove(dest_path)
+                except Exception: pass
+            return False, list(ticket_ids)
+            
+    import re
+    df.columns = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df.columns]
+    num_col = next((c for c in ['number', 'Number', 'id', 'ticket_id', 'Ticket identification'] if c in df.columns), None)
+    assign_col = next((c for c in ['assigned_to', 'Assigned to', 'assigned_to_name'] if c in df.columns), None)
+    
+    downloaded_map = {}
+    if num_col and not df.empty:
+        for _, row in df.iterrows():
+            val_id = str(row[num_col]).strip().upper()
+            if val_id and val_id != 'NAN':
+                downloaded_map[val_id] = row
+                
+    still_unassigned = []
+    for t_id in ticket_ids:
+        t_norm = str(t_id).strip().upper()
+        if t_norm not in downloaded_map:
+            print(f"  [PENDIENTE] Ticket {t_id}: no retornado en la consulta de ServiceNow.")
+            still_unassigned.append(t_id)
+        else:
+            row = downloaded_map[t_norm]
+            if assign_col:
+                val_assignee = row.get(assign_col)
+                if pd.isna(val_assignee) or not str(val_assignee).strip() or str(val_assignee).strip().lower() in ('nan', 'none', 'null'):
+                    print(f"  [PENDIENTE] Ticket {t_id}: campo '{assign_col}' está vacío en ServiceNow.")
+                    still_unassigned.append(t_id)
+                else:
+                    print(f"  [CONFIRMADO] Ticket {t_id}: asignado a '{str(val_assignee).strip()}'.")
+            else:
+                print(f"  [PENDIENTE] Ticket {t_id}: columna de asignatario no disponible en CSV descargado.")
+                still_unassigned.append(t_id)
+                
+    # Limpiar archivo temporal de verificación
+    if os.path.exists(dest_path):
+        try:
+            os.remove(dest_path)
+        except Exception:
+            pass
+            
+    return True, still_unassigned
+
+
+def verify_and_reassign_tickets(processed_incidents: list = None, processed_requirements: list = None,
+                                coords_incidents: dict = None, coords_requirements: dict = None):
+    """
+    Verifica si los tickets asignados en el ciclo efectivamente quedaron guardados
+    en ServiceNow tras un lapso de espera (por defecto 1 minuto / 60 segundos).
+    Si DRY_RUN es True o no hay tickets procesados, no realiza acción.
+    
+    Descarga exclusivamente los tickets procesados y si alguno permanece sin asignatario,
+    consulta 'Salida/reporte_detalle_asignaciones.csv' y reescribe los datos en ServiceNow.
+    Permite hasta MAX_VERIFICATION_RETRIES reintentos.
+    """
+    global DRY_RUN
+    if DRY_RUN:
+        return
+        
+    pending_incidents = [str(t).strip() for t in (processed_incidents or []) if str(t).strip()]
+    pending_requirements = [str(t).strip() for t in (processed_requirements or []) if str(t).strip()]
+    
+    total_to_verify = len(pending_incidents) + len(pending_requirements)
+    if total_to_verify == 0:
+        return
+        
+    config_params = load_config_parameters()
+    wait_time = float(config_params.get("verification_wait_seconds", VERIFICATION_WAIT_TIME))
+    max_retries = int(config_params.get("max_verification_retries", MAX_VERIFICATION_RETRIES))
+    
+    print("\n" + "="*60)
+    print("      VERIFICACIÓN DE ASIGNACIONES EN SERVICENOW (GUI)")
+    print(f"      Tickets a verificar: {len(pending_incidents)} incidentes, {len(pending_requirements)} requerimientos")
+    print(f"      Tiempo de asentamiento: {int(wait_time)}s | Reintentos máximos: {max_retries}")
+    print("="*60)
+    
+    for attempt in range(1, max_retries + 1):
+        print(f"\n[VERIFICACIÓN - Intento {attempt}/{max_retries}] Esperando {int(wait_time)} segundos para asentamiento en ServiceNow...")
+        wait_rem = int(wait_time)
+        try:
+            while wait_rem > 0:
+                step = min(10, wait_rem)
+                time.sleep(step)
+                wait_rem -= step
+                if wait_rem > 0:
+                    print(f"Verificando en {wait_rem} segundos...")
+        except KeyboardInterrupt:
+            print("\n[VERIFICACIÓN] Espera interrumpida por el usuario (Ctrl+C). Omitiendo verificación restante.")
+            break
+            
+        unassigned_incidents = []
+        if pending_incidents:
+            ok, unassigned_incidents = check_servicenow_tickets_status(pending_incidents, is_requirement=False)
+            
+        unassigned_requirements = []
+        if pending_requirements:
+            ok, unassigned_requirements = check_servicenow_tickets_status(pending_requirements, is_requirement=True)
+            
+        if not unassigned_incidents and not unassigned_requirements:
+            print(f"\n[VERIFICACIÓN EXITOSA] ¡Confirmado! Todos los tickets ({total_to_verify}) tienen asignatario en ServiceNow.")
+            return
+            
+        print(f"\n[ALERTA DE PERSISTENCIA - Intento {attempt}] Se detectaron tickets pendientes:")
+        if unassigned_incidents:
+            print(f"  - Incidentes sin asignación ({len(unassigned_incidents)}): {unassigned_incidents}")
+            if coords_incidents:
+                retry_df_inc = get_retry_dataframe_from_assignment_report(unassigned_incidents, ticket_type="incid")
+                if not retry_df_inc.empty:
+                    print(f"  Reescribiendo {len(retry_df_inc)} incidentes en ServiceNow según Salida/reporte_detalle_asignaciones.csv...")
+                    update_tickets_in_servicenow(retry_df_inc, coords_incidents, is_requirement=False)
+                else:
+                    print(f"  [ERROR] No se encontraron datos para los incidentes pendientes en reporte_detalle_asignaciones.csv.")
+            else:
+                print(f"  [ERROR] Coordenadas de incidentes no disponibles para reintento.")
+                
+        if unassigned_requirements:
+            print(f"  - Requerimientos sin asignación ({len(unassigned_requirements)}): {unassigned_requirements}")
+            if coords_requirements:
+                retry_df_req = get_retry_dataframe_from_assignment_report(unassigned_requirements, ticket_type="req")
+                if not retry_df_req.empty:
+                    print(f"  Reescribiendo {len(retry_df_req)} requerimientos en ServiceNow según Salida/reporte_detalle_asignaciones.csv...")
+                    update_tickets_in_servicenow(retry_df_req, coords_requirements, is_requirement=True)
+                else:
+                    print(f"  [ERROR] No se encontraron datos para los requerimientos pendientes en reporte_detalle_asignaciones.csv.")
+            else:
+                print(f"  [ERROR] Coordenadas de requerimientos no disponibles para reintento.")
+                
+        pending_incidents = unassigned_incidents
+        pending_requirements = unassigned_requirements
+        
+    print(f"\n[VERIFICACIÓN FINAL] Se completaron los {max_retries} intentos de verificación.")
+    if pending_incidents or pending_requirements:
+        print(f"[ADVERTENCIA] Quedaron tickets pendientes que no pudieron ser confirmados:")
+        if pending_incidents:
+            print(f"  - Incidentes: {pending_incidents}")
+        if pending_requirements:
+            print(f"  - Requerimientos: {pending_requirements}")
+        print("Verifique la conectividad de red o revise los registros manualmente en ServiceNow.")
+
 
 def run_rpa_loop(min_mtime=None):
     """Orquesta el ciclo de actualización de interfaz gráfica para incidentes y requerimientos."""
@@ -792,26 +1009,31 @@ def run_rpa_loop(min_mtime=None):
     print("              3. SERVICENOW UI UPDATING PHASE")
     print("="*50)
     
+    processed_incidents = []
     latest_incident_csv = find_latest_output_file("incidentes_con_asignacion_*.csv", min_mtime=min_mtime)
     if latest_incident_csv:
         if coords_incidents:
             print(f"Latest Incident prediction file found: {latest_incident_csv}")
-            update_tickets_in_servicenow(latest_incident_csv, coords_incidents, is_requirement=False)
+            processed_incidents = update_tickets_in_servicenow(latest_incident_csv, coords_incidents, is_requirement=False) or []
         else:
             print("Skipping Incident updating: Incident config coordinates not loaded.")
     else:
         print("No incident predictions output file found for this cycle to process.")
         
+    processed_requirements = []
     latest_req_csv = find_latest_output_file("requerimientos_con_asignacion_*.csv", min_mtime=min_mtime)
     if latest_req_csv:
         if coords_requirements:
             print(f"Latest Requirement prediction file found: {latest_req_csv}")
-            update_tickets_in_servicenow(latest_req_csv, coords_requirements, is_requirement=True)
+            processed_requirements = update_tickets_in_servicenow(latest_req_csv, coords_requirements, is_requirement=True) or []
         else:
             print("Skipping Requirement updating: Requirement config coordinates not loaded.")
     else:
         print("No requirement predictions output file found for this cycle to process.")
         
+    # Verificación post-asignación en ServiceNow (solo si DRY_RUN=False)
+    verify_and_reassign_tickets(processed_incidents, processed_requirements, coords_incidents, coords_requirements)
+
     close_browser_at_end()
 
 # ==========================================
