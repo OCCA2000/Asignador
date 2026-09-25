@@ -862,16 +862,25 @@ def check_servicenow_tickets_status(ticket_ids: list, is_requirement: bool = Fal
         print(f"[ADVERTENCIA] No se pudo obtener la descarga de verificación para {table_name}. Se conservarán como pendientes.")
         return False, list(ticket_ids)
         
+    from Programas.PipelineUtils import detect_csv_separator
+    sep = detect_csv_separator(dest_path, default=',')
+    
     df = None
-    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
-        try:
-            df = pd.read_csv(dest_path, sep=';', encoding=enc, dtype=str)
+    for s in [sep, ',', ';']:
+        for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+            try:
+                temp_df = pd.read_csv(dest_path, sep=s, encoding=enc, dtype=str)
+                if temp_df is not None and len(temp_df.columns) > 1:
+                    df = temp_df
+                    break
+            except Exception:
+                continue
+        if df is not None:
             break
-        except Exception:
-            continue
+
     if df is None:
         try:
-            df = pd.read_csv(dest_path, sep=';', encoding='latin-1', dtype=str)
+            df = pd.read_csv(dest_path, sep=sep, encoding='latin-1', dtype=str)
         except Exception as e:
             print(f"[ERROR] No se pudo leer archivo de verificación {dest_path}: {e}")
             if os.path.exists(dest_path):
