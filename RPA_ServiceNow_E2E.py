@@ -28,6 +28,8 @@ from Programas.PipelineUtils import (
     check_file_freshness,
     delete_unprocessed_input_files,
     get_retry_dataframe_from_assignment_report,
+    count_input_records,
+    has_input_records,
 )
 
 # ==========================================
@@ -573,7 +575,7 @@ def run_subprocess_logged(cmd, cwd=None):
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, cmd)
 
-def run_predictions():
+def run_predictions(run_incidents=True, run_requirements=True):
     """Ejecuta los scripts de predicción de aprendizaje automático."""
     print("\n" + "="*50)
     print("              2. FASE DE MODELOS DE PREDICCIÓN")
@@ -591,22 +593,34 @@ def run_predictions():
     archive_previous_files(SALIDA_DIR, "*.log")
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    inc_input_path = os.path.join(ENTRADA_DIR, "incident.csv")
+    req_input_path = os.path.join(ENTRADA_DIR, "sc_req_item.csv")
     
     # Run Incident Assigner
-    print("Running Assigner_Incidents.py...")
-    try:
-        run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], cwd=script_dir)
-        print("Incident predictions complete!")
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing Assigner_Incidents.py: {e}")
+    if run_incidents:
+        inc_count = count_input_records(inc_input_path)
+        if inc_count == 0:
+            print(f"[CONTROL] Omitiendo Assigner_Incidents.py: '{inc_input_path}' no contiene registros a procesar (0 tickets).")
+        else:
+            print(f"Running Assigner_Incidents.py ({inc_count} tickets pendientes)...")
+            try:
+                run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], cwd=script_dir)
+                print("Incident predictions complete!")
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing Assigner_Incidents.py: {e}")
         
     # Run Requirement Assigner
-    print("\nRunning Assigner_Requirements.py...")
-    try:
-        run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], cwd=script_dir)
-        print("Requirement predictions complete!")
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing Assigner_Requirements.py: {e}")
+    if run_requirements:
+        req_count = count_input_records(req_input_path)
+        if req_count == 0:
+            print(f"\n[CONTROL] Omitiendo Assigner_Requirements.py: '{req_input_path}' no contiene registros a procesar (0 tickets).")
+        else:
+            print(f"\nRunning Assigner_Requirements.py ({req_count} tickets pendientes)...")
+            try:
+                run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], cwd=script_dir)
+                print("Requirement predictions complete!")
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing Assigner_Requirements.py: {e}")
 
 def update_tickets_in_servicenow(csv_path_or_df, coordinates, is_requirement=False):
     """Lee las asignaciones predichas y actualiza los tickets a través del control del navegador."""

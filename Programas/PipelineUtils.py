@@ -544,6 +544,51 @@ def check_file_freshness(filepath: str, min_mtime: float = None, max_age_seconds
     return True, f"Archivo reciente y válido (timestamp: {file_time_str})."
 
 
+def count_input_records(filepath: str) -> int:
+    """
+    Cuenta de forma rápida y segura la cantidad de registros de datos en un archivo CSV
+    (excluyendo la fila de encabezado).
+    Retorna 0 si el archivo no existe, está vacío o solo contiene encabezados.
+    """
+    if not filepath or not os.path.exists(filepath):
+        return 0
+    try:
+        if os.path.getsize(filepath) == 0:
+            return 0
+    except OSError:
+        return 0
+
+    sep = detect_csv_separator(filepath)
+    encodings_to_try = ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']
+
+    for enc in encodings_to_try:
+        try:
+            df = pd.read_csv(filepath, sep=sep, encoding=enc, dtype=str, on_bad_lines='skip', engine='python')
+            return len(df)
+        except pd.errors.EmptyDataError:
+            return 0
+        except (UnicodeDecodeError, LookupError):
+            continue
+        except Exception:
+            break
+
+    # Fallback por recuento de líneas si pandas arroja un error imprevisto
+    try:
+        with open(filepath, 'r', encoding='latin-1', errors='ignore') as f:
+            lines = [line.strip() for line in f if line.strip()]
+            return max(0, len(lines) - 1)
+    except Exception:
+        return 0
+
+
+def has_input_records(filepath: str) -> bool:
+    """
+    Verifica si un archivo CSV de entrada existe y contiene al menos un registro de datos.
+    Retorna True si tiene 1 o más registros, False si está vacío, inexistente o solo contiene encabezados.
+    """
+    return count_input_records(filepath) > 0
+
+
 def clean_csv_file(input_path: str, output_path: str, encoding: str = "utf-8",
                    replacement: str = " ", change_separator: bool = True,
                    new_separator: str = ';'):

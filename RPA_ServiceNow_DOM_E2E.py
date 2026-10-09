@@ -30,6 +30,8 @@ from Programas.PipelineUtils import (
     check_file_freshness,
     delete_unprocessed_input_files,
     get_retry_dataframe_from_assignment_report,
+    count_input_records,
+    has_input_records,
 )
 
 # ==========================================
@@ -493,22 +495,32 @@ def run_predictions(run_incidents=True, run_requirements=True):
     archive_previous_files(SALIDA_DIR, "*.log")
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    inc_input_path = os.path.join(ENTRADA_DIR, "incident.csv")
+    req_input_path = os.path.join(ENTRADA_DIR, "sc_req_item.csv")
     
     if run_incidents:
-        print("Running Assigner_Incidents.py...")
-        try:
-            run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], cwd=script_dir)
-            print("Incident predictions complete!")
-        except subprocess.CalledProcessError as e:
-            print(f"Error executing Assigner_Incidents.py: {e}")
+        inc_count = count_input_records(inc_input_path)
+        if inc_count == 0:
+            print(f"[CONTROL] Omitiendo Assigner_Incidents.py: '{inc_input_path}' no contiene registros a procesar (0 tickets).")
+        else:
+            print(f"Running Assigner_Incidents.py ({inc_count} tickets pendientes)...")
+            try:
+                run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Incidents.py")], cwd=script_dir)
+                print("Incident predictions complete!")
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing Assigner_Incidents.py: {e}")
             
     if run_requirements:
-        print("\nRunning Assigner_Requirements.py...")
-        try:
-            run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], cwd=script_dir)
-            print("Requirement predictions complete!")
-        except subprocess.CalledProcessError as e:
-            print(f"Error executing Assigner_Requirements.py: {e}")
+        req_count = count_input_records(req_input_path)
+        if req_count == 0:
+            print(f"\n[CONTROL] Omitiendo Assigner_Requirements.py: '{req_input_path}' no contiene registros a procesar (0 tickets).")
+        else:
+            print(f"\nRunning Assigner_Requirements.py ({req_count} tickets pendientes)...")
+            try:
+                run_subprocess_logged([sys.executable, os.path.join(script_dir, "Assigner_Requirements.py")], cwd=script_dir)
+                print("Requirement predictions complete!")
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing Assigner_Requirements.py: {e}")
 
 # ==========================================
 # GENERADOR DE PAYLOADS JAVASCRIPT DOM

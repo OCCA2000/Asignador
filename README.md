@@ -47,6 +47,10 @@ Este sistema utiliza modelos de Machine Learning avanzados para predecir la cate
   - Funcionalidad de inspección y corrección bajo demanda desde el menú principal de automatización RPA.
   - Corrección de registros CSV multilínea encerrados en comillas dobles (saltos de línea internos) y normalización de delimitadores.
   - Detección automática del formato de fecha corta de Windows (`sShortDate` vía Registro de Windows).
+- **Control Previo de Registros y Ahorro de Recursos (`has_input_records`, `count_input_records`)**:
+  - Verificación ligera previa del contenido de `Entrada/incident.csv` y `Entrada/sc_req_item.csv` antes de invocar `Assigner_Incidents.py` o `Assigner_Requirements.py`.
+  - Si un archivo está vacío, no existe o contiene únicamente la cabecera (0 tickets pendientes), el orquestador omite de inmediato la llamada al modelo, evitando instanciar pipelines pesados de Machine Learning, balanceadores de carga y archivado innecesario.
+  - Salvaguarda defensiva directa en los propios asignadores (`main` y funciones de predicción) ante DataFrames vacíos.
 - **Reporte Acumulativo de Asignaciones**:
   - Histórico persistente en `Salida/reporte_detalle_asignaciones.csv` con registro de asignación previa (`original_assigned_to`), asignada (`predicted_assigned_to`), fecha/hora y modelo/regla aplicada.
 - **Validación de Turnos y Balanceo de Carga**:

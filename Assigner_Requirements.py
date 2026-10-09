@@ -5,6 +5,8 @@ from Programas.PipelineUtils import (
     ExecutionLogger,
     generate_assignation_detail_report,
     clean_and_deidentify_text,
+    count_input_records,
+    has_input_records,
 )
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime, timedelta
@@ -182,6 +184,10 @@ def calculate_resolution_date(opened_at_str):
 
 def predict_requirement_assignments(df_requirements, balancer, model_type='supervised', architecture='hnlp_mc'):
     """Clasifica requerimientos y los asigna utilizando modelos entrenados."""
+    if df_requirements is None or len(df_requirements) == 0:
+        print("[CONTROL] DataFrame de requerimientos vacío (0 registros). Omitiendo predicción.")
+        return df_requirements
+
     if model_type == 'semisupervised':
         arch_label = "HNLP-MC (Multi-Canal)" if architecture in ['hnlp_mc', 'hnlp'] else "TF-IDF (Baseline)"
         print(f"Predicting requirement assignments using semisupervised model [{arch_label}]...")
@@ -466,10 +472,20 @@ def load_and_clean_data():
 
 def main():
     """Flujo de trabajo principal de asignación para requerimientos."""
+    input_file = "Entrada/sc_req_item.csv"
+    req_count = count_input_records(input_file)
+    if req_count == 0:
+        print(f"[CONTROL] No hay registros en '{input_file}' (0 tickets). Proceso finalizado sin ejecutar modelos para ahorrar recursos.")
+        return
+
     try:
         df_requirements, timing, original_columns = load_and_clean_data()
     except Exception as e:
         print(f"Error loading data: {e}. Please ensure Entrada/sc_req_item.csv exists.")
+        return
+
+    if df_requirements is None or len(df_requirements) == 0:
+        print("[CONTROL] No hay requerimientos para asignar (0 registros). Proceso finalizado sin ejecutar modelos.")
         return
 
     balancer = WorkloadBalancer(

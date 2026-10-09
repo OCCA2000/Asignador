@@ -4,6 +4,8 @@ from Programas.PipelineUtils import (
     ExecutionLogger,
     generate_assignation_detail_report,
     clean_and_deidentify_text,
+    count_input_records,
+    has_input_records,
 )
 from Programas.Trainer import save_predictions_to_categorized_dataset
 import os
@@ -13,6 +15,10 @@ from Programas.LoadBalancer import WorkloadBalancer
 
 def predict_incident_assignments(df_incidents, balancer, model_type='supervised', architecture='hnlp_mc'):
     """Predice asignaciones de incidentes utilizando modelos entrenados"""
+    if df_incidents is None or len(df_incidents) == 0:
+        print("[CONTROL] DataFrame de incidentes vacío (0 registros). Omitiendo predicción.")
+        return df_incidents
+
     if model_type == 'semisupervised':
         arch_label = "HNLP-MC (Multi-Canal)" if architecture in ['hnlp_mc', 'hnlp'] else "TF-IDF (Baseline)"
         print(f"Predicting incident assignments using semisupervised model [{arch_label}]...")
@@ -276,11 +282,21 @@ def load_and_clean_data():
 
 def main():
     """Flujo principal de asignación para incidentes"""
+    input_file = "Entrada/incident.csv"
+    inc_count = count_input_records(input_file)
+    if inc_count == 0:
+        print(f"[CONTROL] No hay registros en '{input_file}' (0 tickets). Proceso finalizado sin ejecutar modelos para ahorrar recursos.")
+        return
+
     # Cargar y limpiar datos
     try:
         df_incidents, timing, original_columns = load_and_clean_data()
     except Exception as e:
         print(f"Error loading data: {e}. Please ensure Entrada/incident.csv exists.")
+        return
+        
+    if df_incidents is None or len(df_incidents) == 0:
+        print("[CONTROL] No hay incidentes para asignar (0 registros). Proceso finalizado sin ejecutar modelos.")
         return
         
     balancer = WorkloadBalancer()
