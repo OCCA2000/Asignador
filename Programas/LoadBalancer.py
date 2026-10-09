@@ -84,56 +84,99 @@ class WorkloadBalancer:
             t0600 = datetime.strptime("06:00:00", "%H:%M:%S").time()
             t1400 = datetime.strptime("14:00:00", "%H:%M:%S").time()
             t2200 = datetime.strptime("22:00:00", "%H:%M:%S").time()
-            
-            if weekday == 5: # Saturday
-                if time_val < t0600:
-                    shift_col = "Turno 3"
-                    shift_date = date_val - timedelta(days=1)
-                elif t0600 <= time_val < t1400:
-                    shift_col = "Turno 4"
-                    shift_date = date_val
-                else:
-                    shift_col = "Stand-by"
-                    shift_date = date_val
-            elif weekday == 6: # Sunday
-                shift_col = "Stand-by"
-                shift_date = date_val
-            elif weekday == 0 and time_val < t0600: # Monday early morning
-                shift_col = "Stand-by"
-                shift_date = date_val - timedelta(days=1)
-            else: # Monday after 06:00, and Tuesday to Friday
-                if t0600 <= time_val < t1400:
-                    shift_col = "Turno 1"
-                    shift_date = date_val
-                elif t1400 <= time_val < t2200:
-                    shift_col = "Turno 2"
-                    shift_date = date_val
-                else:
-                    shift_col = "Turno 3"
-                    if time_val < t0600:
-                        shift_date = date_val - timedelta(days=1)
-                    else:
-                        shift_date = date_val
-            
-            if 'Fecha' not in self.df_shifts.columns or shift_col not in self.df_shifts.columns:
+
+            if 'Fecha' not in self.df_shifts.columns:
                 return None
 
-            # Parsear la columna 'Fecha' dinámicamente con el formato de Windows y fallbacks
-            parsed_fecha_col = pd.to_datetime(self.df_shifts['Fecha'], format=win_fmt, errors='coerce').dt.date
-            if parsed_fecha_col.isna().any():
-                fallback_parsed = pd.to_datetime(self.df_shifts['Fecha'], errors='coerce').dt.date
-                parsed_fecha_col = parsed_fecha_col.fillna(fallback_parsed)
+            # Parsear la columna 'Fecha' dinámicamente asegurando comparación uniforme de fechas (YYYY-MM-DD)
+            parsed_dt = pd.to_datetime(self.df_shifts['Fecha'], format=win_fmt, errors='coerce')
+            if parsed_dt.isna().any():
+                fallback_dt = pd.to_datetime(self.df_shifts['Fecha'], dayfirst=True, errors='coerce')
+                parsed_dt = parsed_dt.fillna(fallback_dt)
+            if parsed_dt.isna().any():
+                fallback_dt2 = pd.to_datetime(self.df_shifts['Fecha'], errors='coerce')
+                parsed_dt = parsed_dt.fillna(fallback_dt2)
+            parsed_fecha_col = parsed_dt.dt.strftime('%Y-%m-%d')
 
-            match_rows = self.df_shifts[parsed_fecha_col == shift_date]
-            if not match_rows.empty:
-                val = match_rows.iloc[0][shift_col]
-                # If calculated shift is empty, fallback to Stand-by (e.g., on holidays)
-                if (pd.isna(val) or str(val).strip() == '') and 'Stand-by' in match_rows.columns:
-                    val = match_rows.iloc[0]['Stand-by']
+            def _get_row(target_d):
+                target_str = target_d.strftime('%Y-%m-%d')
+                matches = self.df_shifts[parsed_fecha_col == target_str]
+                if not matches.empty:
+                    return matches.iloc[0]
+                return None
+
+            def _clean_val(row_s, col):
+                if row_s is not None and col in row_s:
+                    v = row_s[col]
+                    if pd.notna(v) and str(v).strip() != '':
+                        return str(v).strip().upper()
+                return None
+
+            assignee = None
+
+            if time_val < t0600:
+                # Madrugada (00:00 a 05:59): pertenece al turno nocturno de la noche anterior
+                prev_date = date_val - timedelta(days=1)
+                row_prev = _get_row(prev_date)
                 
-                if pd.notna(val) and str(val).strip() != '':
-                    username = str(val).strip().upper()
-                    return self._canonical_assignee(username)
+                # 1) Si la noche anterior tuvo Turno 3 asignado
+                t3_prev = _clean_val(row_prev, "Turno 3")
+                if t3_prev:
+                    assignee = t3_prev
+                else:
+                    # 2) Si la noche anterior fue fin de semana o feriado, estuvo en Stand-by
+                    sb_prev = _clean_val(row_prev, "Stand-by")
+                    if sb_prev:
+                        assignee = sb_prev
+                    else:
+                        # Fallback al Stand-by del día de hoy
+                        row_curr = _get_row(date_val)
+                        assignee = _clean_val(row_curr, "Stand-by")
+            else:
+                # Jornada diurna, vespertina y nocturna del día actual (>= 06:00)
+                row_curr = _get_row(date_val)
+                if row_curr is None:
+                    return None
+
+                t1 = _clean_val(row_curr, "Turno 1")
+                t2 = _clean_val(row_curr, "Turno 2")
+                t3 = _clean_val(row_curr, "Turno 3")
+                t4 = _clean_val(row_curr, "Turno 4")
+                sb = _clean_val(row_curr, "Stand-by")
+
+                if t0600 <= time_val < t1400:
+                    # Franja mañana (06:00 a 13:59):
+                    # En fines de semana y feriados (como hoy con guardia diurna), Turno 4 es quien cubre.
+                    # Si Turno 4 está definido y (Turno 1 está vacío o es fin de semana): Turno 4
+                    if t4 and (not t1 or weekday in [5, 6]):
+                        assignee = t4
+                    elif t1:
+                        assignee = t1
+                    elif t4:
+                        assignee = t4
+                    else:
+                        assignee = sb
+
+                elif t1400 <= time_val < t2200:
+                    # Franja tarde (14:00 a 21:59):
+                    # En días ordinarios: Turno 2
+                    # En fines de semana o feriados sin Turno 2: Stand-by a partir de las 14:00
+                    if t2:
+                        assignee = t2
+                    else:
+                        assignee = sb
+
+                else:
+                    # Franja noche (>= 22:00):
+                    # En días ordinarios: Turno 3
+                    # En fines de semana o feriados sin Turno 3: Stand-by
+                    if t3:
+                        assignee = t3
+                    else:
+                        assignee = sb
+
+            if assignee:
+                return self._canonical_assignee(assignee)
         except Exception as e:
             print(f"Error resolving shift user: {e}")
         return None
