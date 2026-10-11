@@ -62,6 +62,8 @@ Este sistema utiliza modelos de Machine Learning avanzados para predecir la cate
 
 ```
 Asignador/
+├── app.py                                  # Panel web de administración y monitoreo (Flask)
+├── templates/                              # Plantillas del panel de administración (index.html)
 ├── Assigner_Incidents.py                   # Asignador de incidentes (Soporta HNLP-MC [default] y TF-IDF)
 ├── Assigner_Requirements.py                # Asignador de requerimientos (Soporta HNLP-MC [default] y TF-IDF)
 ├── RPA_ServiceNow_DOM_E2E.py               # Orquestador RPA E2E mediante inyección JavaScript DOM (Recomendado)
@@ -262,6 +264,18 @@ py RPA_ServiceNow_DOM_E2E.py
 py RPA_ServiceNow_E2E.py
 ```
 *(Incluye las mismas opciones de orquestación, ejecución periódica y la opción 7 para saneamiento de archivos de entrada)*.
+
+### 6. Panel Web de Administración y Monitoreo (`app.py`)
+Panel visual interactivo para administración de configuración operativa, gestión de técnicos y turnos, y monitoreo en tiempo real de logs y métricas:
+```bash
+py app.py
+```
+Abre **http://127.0.0.1:5000** en el navegador.
+
+- **Directamente integrado al proyecto**: Opera sobre los archivos reales en `Especificaciones/` (`Grupos - Usuarios.csv`, `Grupos - Incidentes(Grupos).csv`, `Grupos - Requerimientos(Grupos).csv`, `Turnos.csv`), `Salida/` (`reporte_detalle_asignaciones.csv`, archivos `.log`) y `Entrada/` (`incident.csv`, `sc_req_item.csv`).
+- **Logs y Métricas en Vivo**: Selector dinámico de archivos de log generados en `Salida/`, contador de `ADVERTENCIA`, refresco automático cada 5 segundos y gráficas interactivas por día y por técnico para incidentes y requerimientos.
+- **Gestión de Personal y Especialidades**: Alta/baja de integrantes, activación/desactivación del flag de asignación (`Estado = 1/0`), creación de nuevos grupos y asignación de técnicos por categoría.
+- **Programación de Turnos**: Asignación semanal por roles (`Turno 1` a `Turno 4`, `Stand-by`) sincronizada con `Especificaciones/Turnos.csv`.
 
 ---
 

@@ -1,0 +1,1331 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Asignador Inteligente · Panel de Administración y Monitoreo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #0f766e;
+      --primary-hover: #0d9488;
+      --primary-light: #ccfbf1;
+      --navy: #0f172a;
+      --navy-light: #1e293b;
+      --slate-50: #f8fafc;
+      --slate-100: #f1f5f9;
+      --slate-200: #e2e8f0;
+      --slate-300: #cbd5e1;
+      --slate-400: #94a3b8;
+      --slate-600: #475569;
+      --slate-700: #334155;
+      --slate-800: #1e293b;
+      --slate-900: #0f172a;
+      --success: #10b981;
+      --success-light: #ecfdf5;
+      --warning: #f59e0b;
+      --warning-light: #fffbeb;
+      --danger: #ef4444;
+      --danger-light: #fef2f2;
+      --card-radius: 14px;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #f1f5f9;
+      color: var(--slate-800);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    /* Hero Header */
+    .hero {
+      background: linear-gradient(135deg, #091e3a 0%, #0f395f 50%, #0d9488 100%);
+      color: #ffffff;
+      border-radius: var(--card-radius);
+      padding: 28px 36px;
+      margin-bottom: 22px;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      top: -50px;
+      right: -50px;
+      width: 250px;
+      height: 250px;
+      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .hero h1 {
+      font-size: 27px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .hero p {
+      margin-top: 6px;
+      color: #cbd5e1;
+      font-size: 14px;
+      max-width: 800px;
+    }
+    .hero-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #34d399;
+      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+
+    /* Stats KPI Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .stat-card {
+      background: #ffffff;
+      border: 1px solid var(--slate-200);
+      border-radius: var(--card-radius);
+      padding: 16px 20px;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    .stat-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--slate-600);
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--slate-900);
+      line-height: 1.1;
+    }
+    .stat-sub {
+      font-size: 11px;
+      color: var(--slate-400);
+      margin-top: 4px;
+    }
+
+    /* Notifications & Alert */
+    .notice {
+      padding: 14px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 18px;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .notice.ok {
+      display: block;
+      background: var(--success-light);
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+    .notice.err {
+      display: block;
+      background: var(--danger-light);
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Tab Navigation */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .tab-btn {
+      background: #ffffff;
+      border: 1px solid var(--slate-200);
+      color: var(--slate-700);
+      padding: 11px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      background: var(--slate-100);
+      border-color: var(--slate-300);
+    }
+    .tab-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 4px 10px rgba(15, 118, 110, 0.25);
+    }
+
+    /* Panels & Cards */
+    .panel {
+      background: #ffffff;
+      border: 1px solid var(--slate-200);
+      border-radius: var(--card-radius);
+      padding: 24px;
+      margin-bottom: 22px;
+      box-shadow: var(--shadow-sm);
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .panel h2 {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--slate-900);
+    }
+    .panel-desc {
+      font-size: 13px;
+      color: var(--slate-600);
+      margin-top: 3px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 15px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--slate-300);
+      background: #ffffff;
+      color: var(--slate-700);
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn:hover {
+      background: var(--slate-100);
+    }
+    .btn.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+    .btn.primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+    .btn.danger {
+      background: #ffffff;
+      border-color: #fecaca;
+      color: var(--danger);
+    }
+    .btn.danger:hover {
+      background: var(--danger-light);
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Form Fields & Controls */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--slate-700);
+    }
+    .field input, .field select, .search-box {
+      border: 1px solid var(--slate-300);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      background: #ffffff;
+      color: var(--slate-800);
+      font-family: inherit;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      min-height: 40px;
+    }
+    .field input:focus, .field select:focus, .search-box:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+    }
+    .field select[multiple] {
+      min-height: 120px;
+    }
+    .field-hint {
+      font-size: 11px;
+      color: var(--slate-400);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge.active {
+      background: #dcfce7;
+      color: #15803d;
+    }
+    .badge.inactive {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    .badge.warn {
+      background: #fef3c7;
+      color: #b45309;
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      background: #ffffff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+    th {
+      background: var(--slate-50);
+      color: var(--slate-700);
+      font-weight: 700;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--slate-200);
+      white-space: nowrap;
+    }
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--slate-100);
+      white-space: nowrap;
+      color: var(--slate-800);
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    tr:hover td {
+      background-color: #fafbfc;
+    }
+
+    /* Log Viewer */
+    .log-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+      background: var(--slate-50);
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--slate-200);
+    }
+    .log-viewer-box {
+      background: #090d16;
+      color: #93c5fd;
+      border-radius: 10px;
+      padding: 18px;
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-y: auto;
+      max-height: 480px;
+      min-height: 220px;
+      border: 1px solid #1e293b;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+    }
+
+    /* Charts */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+      gap: 20px;
+    }
+    .chart-box {
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 18px;
+      background: #ffffff;
+      box-shadow: var(--shadow-sm);
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .chart-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--slate-900);
+    }
+    .chart-canvas {
+      width: 100%;
+      height: 270px;
+      display: block;
+    }
+    .chart-summary {
+      font-size: 12px;
+      color: var(--slate-500);
+      margin-top: 10px;
+      font-weight: 500;
+    }
+
+    /* Groups Grid */
+    .groups-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .group-card {
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: var(--shadow-sm);
+      transition: border-color 0.2s ease;
+    }
+    .group-card:hover {
+      border-color: var(--slate-300);
+    }
+    .group-card h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--slate-900);
+      overflow-wrap: anywhere;
+    }
+    .members-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 32px;
+    }
+    .member-tag {
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Shifts Grid */
+    .shifts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+      margin-bottom: 18px;
+    }
+    .shift-role-card {
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .shift-role-card label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--slate-800);
+      margin-bottom: 8px;
+    }
+
+    .hidden { display: none !important; }
+    .text-muted { color: var(--slate-400); }
+    .empty-state {
+      padding: 36px 20px;
+      text-align: center;
+      color: var(--slate-400);
+      font-size: 13px;
+    }
+
+    @media (max-width: 768px) {
+      .container { padding: 14px; }
+      .hero { padding: 22px; }
+      .hero h1 { font-size: 22px; }
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header Hero -->
+    <header class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>Asignador Inteligente de Tickets</h1>
+          <p>Panel de Administración y Monitoreo en Tiempo Real · Machine Learning + RPA ServiceNow</p>
+        </div>
+        <div class="hero-badges">
+          <span class="chip"><span class="pulse-dot"></span> <span id="pipelineStatus">Sistema Activo</span></span>
+          <span class="chip">Flask & Python</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Global Notice Message -->
+    <div id="notice" class="notice"></div>
+
+    <!-- Executive Metrics Grid -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Integrantes Registrados</div>
+        <div class="stat-value" id="statUsers">—</div>
+        <div class="stat-sub"><span id="statActive">—</span> habilitados para tickets</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Grupos · Incidentes</div>
+        <div class="stat-value" id="statInc">—</div>
+        <div class="stat-sub">Categorías técnicas configuradas</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Grupos · Requerimientos</div>
+        <div class="stat-value" id="statReq">—</div>
+        <div class="stat-sub">Especialidades de servicios</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Tickets en Entrada</div>
+        <div class="stat-value" id="statPending">—</div>
+        <div class="stat-sub"><span id="statPendingInc">0</span> INC · <span id="statPendingReq">0</span> RITM pendientes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Asignaciones</div>
+        <div class="stat-value" id="statTotalReport">—</div>
+        <div class="stat-sub">Registros acumulados en Salida</div>
+      </div>
+    </section>
+
+    <!-- Main Navigation Tabs -->
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="inicio" id="tab-inicio">📊 Inicio · Logs y Métricas</button>
+      <button class="tab-btn" data-tab="usuarios" id="tab-usuarios">👥 Equipo y Usuarios</button>
+      <button class="tab-btn" data-tab="incidentes" id="tab-incidentes">⚡ Grupos · Incidentes</button>
+      <button class="tab-btn" data-tab="requerimientos" id="tab-requerimientos">📋 Grupos · Requerimientos</button>
+      <button class="tab-btn" data-tab="turnos" id="tab-turnos">🗓️ Turnos Semanales</button>
+    </nav>
+
+    <!-- TAB 1: INICIO, LOGS Y MÉTRICAS -->
+    <section id="inicio" class="view">
+      <!-- Live Log Monitoring -->
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Registro de Ejecución (Logs)</h2>
+            <p class="panel-desc">Visualizador de trazas en vivo desde la carpeta real <code>Salida/</code>.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="refreshDashboard" class="btn primary">🔄 Actualizar datos</button>
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="autoRefreshToggle" checked> Auto-refresco (5s)
+            </label>
+          </div>
+        </div>
+
+        <div class="log-toolbar">
+          <div class="field" style="min-width:260px;flex:1;">
+            <label for="logFileSelector" style="font-size:11px;color:var(--slate-600)">Archivo de Log:</label>
+            <select id="logFileSelector" style="min-height:36px;padding:6px 10px;"></select>
+          </div>
+          <span class="badge warn" id="warningCount">ADVERTENCIA: 0</span>
+          <span class="badge" id="logFileSize" style="background:#e2e8f0;color:#334155;">0 KB</span>
+          <span class="text-muted" id="logStatus" style="font-size:12px;margin-left:auto;">Cargando...</span>
+          <button id="copyLogBtn" class="btn" style="padding:6px 10px;font-size:12px;">📋 Copiar log</button>
+        </div>
+
+        <pre id="logViewer" class="log-viewer-box">Cargando registro de ejecución...</pre>
+      </div>
+
+      <!-- Charts for Incidentes & Requerimientos -->
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Tickets Asignados por Día</h2>
+            <p class="panel-desc">Métricas dinámicas extraídas de <code>Salida/reporte_detalle_asignaciones.csv</code>.</p>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="chart-box">
+            <div class="chart-header">
+              <span class="chart-title">Incidentes (INC)</span>
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label for="incidentUserFilter">Filtrar por Técnico Asignado:</label>
+              <select id="incidentUserFilter">
+                <option value="__all__">Todos los técnicos</option>
+              </select>
+            </div>
+            <canvas id="incidentChart" class="chart-canvas" aria-label="Gráfica de incidentes diarios"></canvas>
+            <div id="incidentSummary" class="chart-summary"></div>
+          </div>
+
+          <div class="chart-box">
+            <div class="chart-header">
+              <span class="chart-title">Requerimientos (RITM)</span>
+            </div>
+            <div class="field" style="margin-bottom:12px;">
+              <label for="requirementUserFilter">Filtrar por Técnico Asignado:</label>
+              <select id="requirementUserFilter">
+                <option value="__all__">Todos los técnicos</option>
+              </select>
+            </div>
+            <canvas id="requirementChart" class="chart-canvas" aria-label="Gráfica de requerimientos diarios"></canvas>
+            <div id="requirementSummary" class="chart-summary"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: USUARIOS Y DISPONIBILIDAD -->
+    <section id="usuarios" class="view hidden">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Agregar Nuevo Integrante</h2>
+            <p class="panel-desc">Guarda el usuario en <code>Especificaciones/Grupos - Usuarios.csv</code> y asigna sus especialidades.</p>
+          </div>
+        </div>
+        <form id="userForm">
+          <div class="form-grid">
+            <div class="field">
+              <label for="nombre">Nombre Completo *</label>
+              <input id="nombre" required placeholder="Ej. APELLIDO NOMBRE">
+            </div>
+            <div class="field">
+              <label for="usuario">Usuario del Sistema *</label>
+              <input id="usuario" required placeholder="Ej. jperez">
+            </div>
+            <div class="field">
+              <label for="snow">ServiceNow ID (Sys ID) *</label>
+              <input id="snow" required placeholder="32 caracteres hex">
+            </div>
+            <div class="field">
+              <label for="estado">Estado Inicial</label>
+              <select id="estado">
+                <option value="1">1 · Habilitado para recibir tickets</option>
+                <option value="0">0 · Deshabilitado (Ausente/Guardia)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="incSelect">Especialidades en Incidentes</label>
+              <select id="incSelect" multiple></select>
+              <span class="field-hint">Usa Ctrl / Cmd + clic para selección múltiple</span>
+            </div>
+            <div class="field">
+              <label for="reqSelect">Especialidades en Requerimientos</label>
+              <select id="reqSelect" multiple></select>
+              <span class="field-hint">Usa Ctrl / Cmd + clic para selección múltiple</span>
+            </div>
+          </div>
+          <div style="margin-top:18px;display:flex;gap:10px;">
+            <button class="btn primary" type="submit">➕ Registrar integrante</button>
+            <button class="btn" type="reset">Limpiar formulario</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Equipo y Disponibilidad</h2>
+            <p class="panel-desc">Activa o desactiva la recepción de carga sin eliminar las especialidades técnicas.</p>
+          </div>
+          <input class="search-box" id="userSearch" placeholder="🔍 Buscar por nombre, usuario o sys_id..." style="min-width:320px;">
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Usuario</th>
+                <th>ServiceNow ID</th>
+                <th>Estado</th>
+                <th style="text-align:right;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="usersTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: GRUPOS DE INCIDENTES -->
+    <section id="incidentes" class="view hidden">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Crear Nuevo Grupo de Incidentes</h2>
+            <p class="panel-desc">Añade una categoría como nueva columna en <code>Especificaciones/Grupos - Incidentes(Grupos).csv</code>.</p>
+          </div>
+        </div>
+        <form id="newIncGroupForm">
+          <div class="form-grid">
+            <div class="field">
+              <label for="newIncGroupName">Nombre de la Categoría/Grupo *</label>
+              <input id="newIncGroupName" required placeholder="Ej. Transferencias">
+            </div>
+            <div class="field">
+              <label for="newIncGroupMembers">Integrantes Capacitados</label>
+              <select id="newIncGroupMembers" multiple></select>
+              <span class="field-hint">Selecciona con Ctrl / Cmd + clic</span>
+            </div>
+          </div>
+          <div style="margin-top:16px;">
+            <button class="btn primary" type="submit">➕ Crear grupo de incidentes</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Especialidades por Grupo · Incidentes</h2>
+            <p class="panel-desc">Selecciona los integrantes capacitados para resolver tickets en cada grupo.</p>
+          </div>
+          <input class="search-box" id="incSearch" placeholder="🔍 Filtrar grupos de incidentes..." style="min-width:300px;">
+        </div>
+        <div id="incGroups" class="groups-grid"></div>
+      </div>
+    </section>
+
+    <!-- TAB 4: GRUPOS DE REQUERIMIENTOS -->
+    <section id="requerimientos" class="view hidden">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Crear Nuevo Grupo de Requerimientos</h2>
+            <p class="panel-desc">Añade una categoría como nueva columna en <code>Especificaciones/Grupos - Requerimientos(Grupos).csv</code>.</p>
+          </div>
+        </div>
+        <form id="newReqGroupForm">
+          <div class="form-grid">
+            <div class="field">
+              <label for="newReqGroupName">Nombre de la Categoría/Grupo *</label>
+              <input id="newReqGroupName" required placeholder="Ej. Certificados">
+            </div>
+            <div class="field">
+              <label for="newReqGroupMembers">Integrantes Capacitados</label>
+              <select id="newReqGroupMembers" multiple></select>
+              <span class="field-hint">Selecciona con Ctrl / Cmd + clic</span>
+            </div>
+          </div>
+          <div style="margin-top:16px;">
+            <button class="btn primary" type="submit">➕ Crear grupo de requerimientos</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Especialidades por Grupo · Requerimientos</h2>
+            <p class="panel-desc">Selecciona los integrantes capacitados para resolver requerimientos en cada grupo.</p>
+          </div>
+          <input class="search-box" id="reqSearch" placeholder="🔍 Filtrar grupos de requerimientos..." style="min-width:300px;">
+        </div>
+        <div id="reqGroups" class="groups-grid"></div>
+      </div>
+    </section>
+
+    <!-- TAB 5: TURNOS SEMANALES -->
+    <section id="turnos" class="view hidden">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Programación de Turnos Semanales</h2>
+            <p class="panel-desc">Selecciona el lunes de la semana y distribuye los 5 roles operativos en <code>Especificaciones/Turnos.csv</code>.</p>
+          </div>
+        </div>
+        <div class="field" style="max-width:280px;">
+          <label for="weekDate">Lunes de la semana:</label>
+          <input type="date" id="weekDate" required>
+        </div>
+        <div id="weekgrid" class="shifts-grid"></div>
+        <div style="display:flex;gap:12px;align-items:center;">
+          <button id="saveWeek" class="btn primary">💾 Guardar turnos de la semana</button>
+          <span class="text-muted" style="font-size:12px;">Solo técnicos habilitados (Estado = 1)</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Cuadrante Registrado en Turnos.csv</h2>
+            <p class="panel-desc">Fechas registradas en el archivo de especificación.</p>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead id="shiftHead"></thead>
+            <tbody id="shiftBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const roles = ["Turno 1", "Turno 2", "Turno 3", "Turno 4", "Stand-by"];
+    let state = null;
+    let dashboardData = null;
+    let autoRefreshTimer = null;
+
+    const $ = id => document.getElementById(id);
+
+    function notice(msg, type = "ok") {
+      const n = $("notice");
+      n.textContent = msg;
+      n.className = "notice " + type;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => {
+        if (n.className.includes("ok")) {
+          n.className = "notice";
+          n.textContent = "";
+        }
+      }, 5000);
+    }
+
+    async function api(url, opts = {}) {
+      const r = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        ...opts
+      });
+      let d = {};
+      try { d = await r.json(); } catch {}
+      if (!r.ok) throw new Error(d.error || "No se pudo completar la operación.");
+      return d;
+    }
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    function activeUsers() {
+      return (state?.users || []).filter(u => String(u.estado) === "1");
+    }
+
+    function userName(username) {
+      const u = (state?.users || []).find(x => x.usuario.toLowerCase() === (username || "").toLowerCase());
+      return u ? `${u.nombre} (${u.usuario})` : username;
+    }
+
+    function fillGroupSelect(id, groups) {
+      $(id).innerHTML = (groups || []).map(g => `<option value="${esc(g.nombre)}">${esc(g.nombre)}</option>`).join("");
+    }
+
+    function fillMembersSelect(id) {
+      const el = $(id);
+      const selected = [...el.selectedOptions].map(o => o.value);
+      const sorted = (state?.users || []).slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
+      el.innerHTML = sorted.map(u => `
+        <option value="${esc(u.usuario)}" ${selected.includes(u.usuario) ? "selected" : ""}>
+          ${esc(u.nombre)} · ${esc(u.usuario)} ${String(u.estado) === "1" ? "" : "(deshabilitado)"}
+        </option>
+      `).join("");
+    }
+
+    function renderUsers() {
+      const q = $("userSearch").value.toLowerCase();
+      const list = (state?.users || []).filter(u =>
+        [u.nombre, u.usuario, u.snow_id].some(v => String(v).toLowerCase().includes(q))
+      );
+      $("usersTable").innerHTML = list.map(u => `
+        <tr>
+          <td><strong>${esc(u.nombre)}</strong></td>
+          <td><code>${esc(u.usuario)}</code></td>
+          <td><span style="font-family:monospace;font-size:11px;">${esc(u.snow_id)}</span></td>
+          <td>
+            <span class="badge ${String(u.estado) === "1" ? "active" : "inactive"}">
+              ${String(u.estado) === "1" ? "Habilitado (1)" : "Deshabilitado (0)"}
+            </span>
+          </td>
+          <td style="text-align:right;">
+            <button class="btn ${String(u.estado) === "1" ? "danger" : "primary"}" style="padding:4px 10px;font-size:12px;" onclick="toggleUser('${esc(u.usuario)}', ${String(u.estado) === "1" ? "0" : "1"})">
+              ${String(u.estado) === "1" ? "Desactivar" : "Activar"}
+            </button>
+            <button class="btn danger" style="padding:4px 10px;font-size:12px;" onclick="removeUser('${esc(u.usuario)}')">
+              Eliminar
+            </button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" class="empty-state">No se encontraron usuarios coincidentes.</td></tr>`;
+    }
+
+    function renderGroups(kind) {
+      const groups = state?.[kind] || [];
+      const target = kind === "incidentes" ? "incGroups" : "reqGroups";
+      const search = $(kind === "incidentes" ? "incSearch" : "reqSearch").value.toLowerCase();
+      const active = (state?.users || []).slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
+
+      const filtered = groups.filter(g => g.nombre.toLowerCase().includes(search));
+      $(target).innerHTML = filtered.map((g, idx) => `
+        <article class="group-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>${esc(g.nombre)}</h3>
+            <span class="badge" style="background:#f1f5f9;color:#475569;">${g.miembros.length} miembro(s)</span>
+          </div>
+          <div class="members-tags">
+            ${g.miembros.map(m => `<span class="member-tag" title="${esc(userName(m))}">${esc(m)}</span>`).join("") || '<span class="text-muted" style="font-size:12px;">Sin integrantes asignados</span>'}
+          </div>
+          <div class="field">
+            <label style="font-size:11px;">Capacitados asignados:</label>
+            <select id="${kind}_${idx}" multiple style="min-height:90px;">
+              ${active.map(u => `
+                <option value="${esc(u.usuario)}" ${g.miembros.includes(u.usuario) ? "selected" : ""}>
+                  ${esc(u.nombre)} (${esc(u.usuario)}) ${String(u.estado) === "1" ? "" : "[deshabilitado]"}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+          <div>
+            <button class="btn primary" style="width:100%;font-size:12px;" onclick="saveGroup('${kind}', '${esc(g.nombre)}', '${kind}_${idx}')">
+              💾 Guardar cambios de grupo
+            </button>
+          </div>
+        </article>
+      `).join("") || '<div class="empty-state" style="grid-column:1/-1;">No hay grupos coincidentes.</div>';
+    }
+
+    function renderShifts() {
+      const headers = state?.turnos?.headers || ["Fecha", ...roles];
+      const rows = state?.turnos?.rows || [];
+      $("shiftHead").innerHTML = "<tr>" + headers.map(h => `<th>${esc(h)}</th>`).join("") + "</tr>";
+      $("shiftBody").innerHTML = rows.slice().reverse().slice(0, 30).reverse().map(r => `
+        <tr>${headers.map(h => `<td>${esc(r[h] || "—")}</td>`).join("")}</tr>
+      `).join("") || `<tr><td colspan="${headers.length}" class="empty-state">No hay turnos registrados en Turnos.csv</td></tr>`;
+    }
+
+    function renderWeek() {
+      const users = activeUsers().slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
+      $("weekgrid").innerHTML = roles.map(role => `
+        <div class="shift-role-card">
+          <label>${esc(role)}</label>
+          <select data-role="${esc(role)}" style="width:100%;">
+            <option value="">Seleccionar técnico...</option>
+            ${users.map(u => `<option value="${esc(u.usuario)}">${esc(u.nombre)} · ${esc(u.usuario)}</option>`).join("")}
+          </select>
+        </div>
+      `).join("");
+    }
+
+    function render() {
+      $("statUsers").textContent = state?.users?.length ?? 0;
+      $("statActive").textContent = activeUsers().length ?? 0;
+      $("statInc").textContent = state?.incidentes?.length ?? 0;
+      $("statReq").textContent = state?.requerimientos?.length ?? 0;
+      const pend = state?.pendientes || { incidentes: 0, requerimientos: 0 };
+      $("statPending").textContent = (pend.incidentes + pend.requerimientos);
+      $("statPendingInc").textContent = pend.incidentes;
+      $("statPendingReq").textContent = pend.requerimientos;
+
+      fillGroupSelect("incSelect", state?.incidentes);
+      fillGroupSelect("reqSelect", state?.requerimientos);
+      fillMembersSelect("newIncGroupMembers");
+      fillMembersSelect("newReqGroupMembers");
+
+      renderUsers();
+      renderGroups("incidentes");
+      renderGroups("requerimientos");
+      renderWeek();
+      renderShifts();
+    }
+
+    function populateFilter(id, userOptions) {
+      const sel = $(id);
+      const prev = sel.value;
+      sel.innerHTML = '<option value="__all__">Todos los técnicos</option>' +
+        (userOptions || []).map(u => `<option value="${esc(u.id)}">${esc(u.label)}</option>`).join("");
+      if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+    }
+
+    function drawChart(canvasId, summaryId, data, filter) {
+      const canvas = $(canvasId);
+      const ctx = canvas.getContext("2d");
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(300, rect.width);
+      const h = 270;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      if (!data || !data.fechas || !data.fechas.length) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "13px 'Inter', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("No hay asignaciones registradas en esta categoría.", w / 2, h / 2);
+        $(summaryId).textContent = "0 tickets registrados";
+        return;
+      }
+
+      const values = (filter === "__all__" ? data.total : (data.series[filter] || []));
+      const points = data.fechas.map(day => ({
+        fecha: day,
+        cantidad: (values.find(x => x.fecha === day) || {}).cantidad || 0
+      }));
+      const total = points.reduce((s, p) => s + p.cantidad, 0);
+      $(summaryId).textContent = `${total} ticket(s) acumulados · ${points.length} fecha(s) evaluadas · Filtro: ${filter === "__all__" ? "Todos" : filter}`;
+
+      const left = 44, right = 16, top = 20, bottom = 55;
+      const plotW = w - left - right, plotH = h - top - bottom;
+      const maxVal = Math.max(1, ...points.map(p => p.cantidad));
+      const step = maxVal <= 5 ? 1 : Math.ceil(maxVal / 5);
+      const yMax = Math.ceil(maxVal / step) * step;
+
+      ctx.font = "10px 'Inter', sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.fillStyle = "#64748b";
+
+      for (let v = 0; v <= yMax; v += step) {
+        const y = top + plotH - (v / yMax) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(w - right, y);
+        ctx.stroke();
+        ctx.fillText(String(v), left - 8, y);
+      }
+
+      const barW = Math.max(3, Math.min(28, (plotW / points.length) * 0.65));
+      const gap = plotW / points.length;
+
+      points.forEach((p, i) => {
+        const x = left + i * gap + (gap - barW) / 2;
+        const barH = (p.cantidad / yMax) * plotH;
+        const y = top + plotH - barH;
+        ctx.fillStyle = "#0f766e";
+        ctx.fillRect(x, y, barW, barH);
+        if (p.cantidad) {
+          ctx.fillStyle = "#0f172a";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          ctx.font = "10px 'Inter', sans-serif";
+          ctx.fillText(String(p.cantidad), x + barW / 2, y - 3);
+        }
+      });
+
+      const labelEvery = Math.max(1, Math.ceil(points.length / 8));
+      ctx.fillStyle = "#64748b";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.font = "10px 'Inter', sans-serif";
+
+      points.forEach((p, i) => {
+        if (i % labelEvery === 0 || i === points.length - 1) {
+          const x = left + i * gap + gap / 2;
+          ctx.save();
+          ctx.translate(x, top + plotH + 8);
+          ctx.rotate(-Math.PI / 5);
+          ctx.fillText(p.fecha, 0, 0);
+          ctx.restore();
+        }
+      });
+    }
+
+    function renderDashboard() {
+      if (!dashboardData) return;
+      const logText = dashboardData.log || "";
+      $("logViewer").textContent = logText || "No hay trazas registradas en el archivo.";
+      const warnings = (logText.match(/ADVERTENCIA/gi) || []).length;
+      $("warningCount").textContent = "ADVERTENCIA: " + warnings;
+      $("warningCount").className = "badge " + (warnings > 0 ? "warn" : "active");
+      
+      const sizeKb = ((dashboardData.active_log_size || 0) / 1024).toFixed(1);
+      $("logFileSize").textContent = sizeKb + " KB";
+      $("logStatus").textContent = "Actualizado: " + new Date().toLocaleTimeString();
+
+      // Selector de logs
+      const sel = $("logFileSelector");
+      const currentSelected = sel.value || dashboardData.active_log;
+      sel.innerHTML = (dashboardData.available_logs || []).map(l => `
+        <option value="${esc(l.rel_path)}" ${l.rel_path === dashboardData.active_log ? "selected" : ""}>
+          ${esc(l.rel_path)} (${(l.size_bytes / 1024).toFixed(1)} KB) - ${esc(l.fecha_modificacion)}
+        </option>
+      `).join("") || '<option value="">No hay logs disponibles</option>';
+
+      // Actualizar total histórico
+      const totalInc = (dashboardData.incidentes?.registros || 0);
+      const totalReq = (dashboardData.requerimientos?.registros || 0);
+      $("statTotalReport").textContent = (totalInc + totalReq);
+
+      populateFilter("incidentUserFilter", dashboardData.incidentes.user_options);
+      populateFilter("requirementUserFilter", dashboardData.requerimientos.user_options);
+      drawChart("incidentChart", "incidentSummary", dashboardData.incidentes, $("incidentUserFilter").value);
+      drawChart("requirementChart", "requirementSummary", dashboardData.requerimientos, $("requirementUserFilter").value);
+    }
+
+    let dashboardLoading = false;
+    async function loadDashboard() {
+      if (dashboardLoading) return;
+      dashboardLoading = true;
+      try {
+        const selectedLog = $("logFileSelector")?.value || "";
+        const url = selectedLog ? `/api/dashboard?log_file=${encodeURIComponent(selectedLog)}` : "/api/dashboard";
+        dashboardData = await api(url);
+        renderDashboard();
+      } catch (e) {
+        $("logStatus").textContent = "Error al actualizar: " + e.message;
+      } finally {
+        dashboardLoading = false;
+      }
+    }
+
+    async function load() {
+      try {
+        state = await api("/api/state");
+        render();
+      } catch (e) {
+        notice(e.message, "err");
+      }
+    }
+
+    async function toggleUser(username, estado) {
+      try {
+        await api("/api/users/" + encodeURIComponent(username), {
+          method: "PATCH",
+          body: JSON.stringify({ estado })
+        });
+        await load();
+        notice("Estado actualizado correctamente para " + username);
+      } catch (e) {
+        notice(e.message, "err");
+      }
+    }
+
+    async function removeUser(username) {
+      if (!confirm(`¿Eliminar definitivamente a "${username}" de usuarios, especialidades y turnos? Esta acción no se puede deshacer.`)) return;
+      try {
+        await api("/api/users/" + encodeURIComponent(username), { method: "DELETE" });
+        await load();
+        notice("Usuario eliminado y desvinculado de todas las configuraciones.");
+      } catch (e) {
+        notice(e.message, "err");
+      }
+    }
+
+    async function saveGroup(kind, name, selectId) {
+      const members = [...$(selectId).selectedOptions].map(o => o.value);
+      try {
+        await api(`/api/groups/${kind}/${encodeURIComponent(name)}`, {
+          method: "PUT",
+          body: JSON.stringify({ miembros: members })
+        });
+        await load();
+        notice(`Grupo "${name}" actualizado con éxito.`);
+      } catch (e) {
+        notice(e.message, "err");
+      }
+    }
+
+    async function createGroup(kind, nameId, membersId, formId) {
+      const nombre = $(nameId).value.trim();
+      const miembros = [...$(membersId).selectedOptions].map(o => o.value);
+      try {
+        const d = await api(`/api/groups/${kind}`, {
+          method: "POST",
+          body: JSON.stringify({ nombre, miembros })
+        });
+        $(formId).reset();
+        await load();
+        notice(d.message || "Grupo creado.");
+      } catch (e) {
+        notice(e.message, "err");
+      }
+    }
+
+    // Event Listeners
+    $("userForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const payload = {
+        nombre: $("nombre").value.trim(),
+        usuario: $("usuario").value.trim(),
+        snow_id: $("snow").value.trim(),
+        estado: $("estado").value,
+        incidentes: [...$("incSelect").selectedOptions].map(o => o.value),
+        requerimientos: [...$("reqSelect").selectedOptions].map(o => o.value)
+      };
+      try {
+        await api("/api/users", { method: "POST", body: JSON.stringify(payload) });
+        $("userForm").reset();
+        await load();
+        notice("Integrante registrado y configurado en los grupos correspondientes.");
+      } catch (err) {
+        notice(err.message, "err");
+      }
+    });
+
+    $("userSearch").addEventListener("input", renderUsers);
+    $("incSearch").addEventListener("input", () => renderGroups("incidentes"));
+    $("reqSearch").addEventListener("input", () => renderGroups("requerimientos"));
+
+    $("saveWeek").addEventListener("click", async () => {
+      const date = $("weekDate").value;
+      const assignments = {};
+      document.querySelectorAll("#weekgrid select").forEach(s => assignments[s.dataset.role] = s.value);
+      if (!date) {
+        notice("Selecciona el lunes de la semana.", "err");
+        return;
+      }
+      try {
+        const d = await api("/api/shifts/week", {
+          method: "PUT",
+          body: JSON.stringify({ fecha_inicio: date, asignaciones: assignments })
+        });
+        await load();
+        notice(d.message);
+      } catch (e) {
+        notice(e.message, "err");
+      }
+    });
+
+    $("refreshDashboard").addEventListener("click", loadDashboard);
+    $("logFileSelector").addEventListener("change", loadDashboard);
+
+    $("copyLogBtn").addEventListener("click", () => {
+      navigator.clipboard.writeText($("logViewer").textContent).then(() => {
+        notice("Log copiado al portapapeles.");
+      });
+    });
+
+    $("autoRefreshToggle").addEventListener("change", e => {
+      if (e.target.checked) {
+        if (!autoRefreshTimer) autoRefreshTimer = setInterval(loadDashboard, 5000);
+      } else {
+        if (autoRefreshTimer) {
+          clearInterval(autoRefreshTimer);
+          autoRefreshTimer = null;
+        }
+      }
+    });
+
+    $("incidentUserFilter").addEventListener("change", () => {
+      if (dashboardData) drawChart("incidentChart", "incidentSummary", dashboardData.incidentes, $("incidentUserFilter").value);
+    });
+
+    $("requirementUserFilter").addEventListener("change", () => {
+      if (dashboardData) drawChart("requirementChart", "requirementSummary", dashboardData.requerimientos, $("requirementUserFilter").value);
+    });
+
+    window.addEventListener("resize", () => {
+      if (dashboardData) renderDashboard();
+    });
+
+    $("newIncGroupForm").addEventListener("submit", e => {
+      e.preventDefault();
+      createGroup("incidentes", "newIncGroupName", "newIncGroupMembers", "newIncGroupForm");
+    });
+
+    $("newReqGroupForm").addEventListener("submit", e => {
+      e.preventDefault();
+      createGroup("requerimientos", "newReqGroupName", "newReqGroupMembers", "newReqGroupForm");
+    });
+
+    document.querySelectorAll(".tab-btn").forEach(b => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(x => x.classList.toggle("active", x === b));
+        document.querySelectorAll(".view").forEach(v => v.classList.toggle("hidden", v.id !== b.dataset.tab));
+      });
+    });
+
+    // Inicializar fecha de lunes actual
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    $("weekDate").value = [monday.getFullYear(), String(monday.getMonth() + 1).padStart(2, "0"), String(monday.getDate()).padStart(2, "0")].join("-");
+
+    // Carga inicial
+    load();
+    loadDashboard();
+    autoRefreshTimer = setInterval(loadDashboard, 5000);
+  </script>
+</body>
+</html>
