@@ -46,14 +46,31 @@ class WorkloadBalancer:
             print(f"Warning: {self.shifts_path} not found. Shift assignments will default to 'TURNO'.")
             return
         try:
-            df = pd.read_csv(self.shifts_path, sep=';', encoding='latin-1', dtype=str)
-            if len(df.columns) == 1:
-                df = pd.read_csv(self.shifts_path, sep=',', encoding='latin-1', dtype=str)
-            df.columns = [str(c).strip() for c in df.columns]
-            if 'Fecha' in df.columns:
+            df = None
+            for enc in ('utf-8-sig', 'utf-8', 'latin-1', 'cp1252'):
+                for sep in (';', ','):
+                    try:
+                        df_tmp = pd.read_csv(self.shifts_path, sep=sep, encoding=enc, dtype=str)
+                        if df_tmp is not None and not df_tmp.empty:
+                            clean_cols = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df_tmp.columns]
+                            if any(c.lower() == 'fecha' for c in clean_cols):
+                                df_tmp.columns = clean_cols
+                                df = df_tmp
+                                break
+                    except Exception:
+                        continue
+                if df is not None:
+                    break
+
+            if df is not None:
+                fecha_col = next((c for c in df.columns if c.lower() == 'fecha'), 'Fecha')
+                if fecha_col != 'Fecha':
+                    df.rename(columns={fecha_col: 'Fecha'}, inplace=True)
                 df['Fecha'] = df['Fecha'].str.strip()
-            self.df_shifts = df
-            print(f"Successfully loaded shifts configuration from {self.shifts_path}")
+                self.df_shifts = df
+                print(f"Successfully loaded shifts configuration from {self.shifts_path}")
+            else:
+                print(f"Warning: could not parse shifts configuration from {self.shifts_path}")
         except Exception as e:
             print(f"Warning: failed to load shifts configuration from {self.shifts_path}: {e}")
 
@@ -185,46 +202,58 @@ class WorkloadBalancer:
         if not os.path.exists(self.groups_path):
             print(f"Warning: {self.groups_path} not found.")
             return
-            
+
         try:
-            # Try comma first
-            df_groups = pd.read_csv(self.groups_path, sep=',', encoding='latin-1', dtype=str)
-            if len(df_groups.columns) == 1:
-                # Fallback to semicolon
-                df_groups = pd.read_csv(self.groups_path, sep=';', encoding='latin-1', dtype=str)
-        except Exception:
-            df_groups = pd.read_csv(self.groups_path, sep=';', encoding='latin-1', dtype=str)
-            
-        def _singularize_phrase(s):
-            tokens = s.split()
-            tokens = [t[:-1] if t.endswith('s') else t for t in tokens]
-            return ' '.join(tokens)
+            df_groups = None
+            for enc in ('utf-8-sig', 'utf-8', 'latin-1', 'cp1252'):
+                for sep in (',', ';'):
+                    try:
+                        df_tmp = pd.read_csv(self.groups_path, sep=sep, encoding=enc, dtype=str)
+                        if df_tmp is not None and len(df_tmp.columns) > 1:
+                            clean_cols = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df_tmp.columns]
+                            df_tmp.columns = clean_cols
+                            df_groups = df_tmp
+                            break
+                    except Exception:
+                        continue
+                if df_groups is not None:
+                    break
 
-        for col in df_groups.columns:
-            macro_group = str(col).strip().upper()
-            if not macro_group or macro_group == 'NAN':
-                continue
+            if df_groups is None:
+                print(f"Warning: could not parse groups configuration from {self.groups_path}")
+                return
 
-            # Build classification -> macro_group mapping using normalized keys
-            norm_col = _normalize_text(col)
-            sing_col = _singularize_phrase(norm_col)
-            if norm_col:
-                self.classification_to_group[norm_col] = macro_group
-            if sing_col and sing_col != norm_col:
-                self.classification_to_group[sing_col] = macro_group
+            def _singularize_phrase(s):
+                tokens = s.split()
+                tokens = [t[:-1] if t.endswith('s') else t for t in tokens]
+                return ' '.join(tokens)
 
-            for val in df_groups[col]:
-                if pd.isna(val):
-                    continue
-                name = str(val).strip().upper()
-                if not name or name == 'NAN':
+            for col in df_groups.columns:
+                macro_group = str(col).strip().upper()
+                if not macro_group or macro_group == 'NAN':
                     continue
 
-                self.group_members_l1.setdefault(macro_group, []).append(name)
-                self.name_to_group[name] = macro_group
+                norm_col = _normalize_text(col)
+                sing_col = _singularize_phrase(norm_col)
+                if norm_col:
+                    self.classification_to_group[norm_col] = macro_group
+                if sing_col and sing_col != norm_col:
+                    self.classification_to_group[sing_col] = macro_group
 
-                if name not in self.workload:
-                    self.workload[name] = 0
+                for val in df_groups[col]:
+                    if pd.isna(val):
+                        continue
+                    name = str(val).strip().upper()
+                    if not name or name == 'NAN':
+                        continue
+
+                    self.group_members_l1.setdefault(macro_group, []).append(name)
+                    self.name_to_group[name] = macro_group
+
+                    if name not in self.workload:
+                        self.workload[name] = 0
+        except Exception as e:
+            print(f"Warning: failed to load {self.groups_path}: {e}")
 
     def _load_users(self):
         if not os.path.exists(self.users_path):
@@ -232,24 +261,34 @@ class WorkloadBalancer:
             return
 
         try:
-            try:
-                # Try comma first
-                df_users = pd.read_csv(self.users_path, sep=',', encoding='latin-1', dtype=str)
-                if len(df_users.columns) == 1:
-                    # Fallback to semicolon
-                    df_users = pd.read_csv(self.users_path, sep=';', encoding='latin-1', dtype=str)
-            except Exception:
-                df_users = pd.read_csv(self.users_path, sep=';', encoding='latin-1', dtype=str)
+            df_users = None
+            for enc in ('utf-8-sig', 'utf-8', 'latin-1', 'cp1252'):
+                for sep in (';', ','):
+                    try:
+                        df_tmp = pd.read_csv(self.users_path, sep=sep, encoding=enc, dtype=str)
+                        if df_tmp is not None and not df_tmp.empty:
+                            clean_cols = [re.sub(r'^[\ufeffï»¿"]+|["\s]+$', '', str(c)).strip() for c in df_tmp.columns]
+                            if any(c.lower() == 'nombre' for c in clean_cols) and any(c.lower() == 'usuario' for c in clean_cols):
+                                df_tmp.columns = clean_cols
+                                df_users = df_tmp
+                                break
+                    except Exception:
+                        continue
+                if df_users is not None:
+                    break
 
-            df_users.columns = [str(c).strip() for c in df_users.columns]
-
-            if 'Nombre' not in df_users.columns or 'Usuario' not in df_users.columns:
+            if df_users is None:
                 print(f"Warning: {self.users_path} missing expected columns 'Nombre'/'Usuario'.")
                 return
 
+            col_map = {c.lower(): c for c in df_users.columns}
+            nombre_col = col_map.get('nombre', 'Nombre')
+            usuario_col = col_map.get('usuario', 'Usuario')
+            estado_col = next((c for k, c in col_map.items() if k in ('estado', 'activo')), None)
+
             for _, row in df_users.iterrows():
-                username_raw = row.get('Usuario')
-                name_raw = row.get('Nombre')
+                username_raw = row.get(usuario_col)
+                name_raw = row.get(nombre_col)
                 if pd.isna(username_raw) or pd.isna(name_raw):
                     continue
 
@@ -264,21 +303,41 @@ class WorkloadBalancer:
                 if token_key:
                     self.name_tokens_to_username[token_key] = username
 
-                status_raw = row.get('Estado')
-                is_active = str(status_raw).strip() == '1' if not pd.isna(status_raw) else True
+                status_raw = row.get(estado_col) if estado_col else None
+                is_active = str(status_raw).strip() in ('1', 'S', 's', 'TRUE', 'true') if (status_raw is not None and not pd.isna(status_raw)) else True
                 if is_active:
                     self.active_usernames.add(username)
+            print(f"Successfully loaded {len(self.username_to_realname)} users ({len(self.active_usernames)} active) from {self.users_path}")
         except Exception as e:
             print(f"Warning: failed to load {self.users_path}: {e}")
 
     def _canonical_assignee(self, name):
         """Resuelve un valor de `assigned_to` (username o nombre real) al username canónico."""
+        if not name or pd.isna(name):
+            return ""
         name_upper = str(name).strip().upper()
         if name_upper in self.username_to_realname:
             return name_upper
 
         token_key = ' '.join(sorted(_normalize_text(name_upper).upper().split()))
-        return self.name_tokens_to_username.get(token_key, name_upper)
+        if token_key in self.name_tokens_to_username:
+            return self.name_tokens_to_username[token_key]
+
+        # Búsqueda difusa por coincidencia de tokens
+        words = set(_normalize_text(name_upper).upper().split())
+        if len(words) >= 2:
+            best_match = None
+            max_common = 1
+            for tk, uname in self.name_tokens_to_username.items():
+                tk_words = set(tk.split())
+                common = len(words & tk_words)
+                if common > max_common and common >= len(words) - 1:
+                    max_common = common
+                    best_match = uname
+            if best_match:
+                return best_match
+
+        return name_upper
 
     def is_active(self, name):
         """Devuelve True si el usuario está activo (Estado=1) en el CSV de usuarios."""

@@ -72,25 +72,76 @@ def write_csv_file(path: Path, rows: list):
 
 def user_rows():
     if not USERS_FILE.exists():
-        return ["Nombre", "Usuario", "ServiceNow ID", "Estado"], []
+        return ["Nombre", "Usuario", "Estado"], []
     rows = read_csv_file(USERS_FILE)
-    headers = rows[0] if rows else ["Nombre", "Usuario", "ServiceNow ID", "Estado"]
+    if not rows:
+        return ["Nombre", "Usuario", "Estado"], []
+
+    raw_headers = [str(h).strip() for h in rows[0]]
+    if raw_headers:
+        raw_headers[0] = re.sub(r'^[\ufeffï»¿"]+', '', raw_headers[0])
+
+    header_lower = [h.lower() for h in raw_headers]
+    name_idx = next((i for i, h in enumerate(header_lower) if "nombre" in h), 0)
+    user_idx = next((i for i, h in enumerate(header_lower) if "usuario" in h), 1)
+    snow_idx = next((i for i, h in enumerate(header_lower) if any(k in h for k in ("servicenow", "sys_id", "snow"))), None)
+    estado_idx = next((i for i, h in enumerate(header_lower) if any(k in h for k in ("estado", "activo"))), None)
+
+    if estado_idx is None:
+        if len(raw_headers) == 3 and snow_idx is None:
+            estado_idx = 2
+        elif len(raw_headers) >= 4:
+            estado_idx = 3
+
+    if snow_idx is None and len(raw_headers) >= 4 and estado_idx != 2:
+        snow_idx = 2
+
     result = []
     for r in rows[1:]:
-        r = (r + ["", "", "", ""])[:4]
+        if not r or not any(x.strip() for x in r):
+            continue
+        nombre = r[name_idx].strip() if name_idx < len(r) else ""
+        usuario = r[user_idx].strip() if user_idx < len(r) else ""
+        if not usuario and not nombre:
+            continue
+        snow_id = r[snow_idx].strip() if (snow_idx is not None and snow_idx < len(r)) else ""
+        estado_raw = r[estado_idx].strip() if (estado_idx is not None and estado_idx < len(r)) else "1"
+        estado = "1" if estado_raw in ("1", "S", "s", "true", "True") else "0"
+
         result.append({
-            "nombre": r[0].strip(),
-            "usuario": r[1].strip(),
-            "snow_id": r[2].strip(),
-            "estado": r[3].strip()
+            "nombre": nombre,
+            "usuario": usuario,
+            "snow_id": snow_id,
+            "estado": estado
         })
-    return headers, result
+    return raw_headers, result
 
 
 def save_users(users):
-    rows = [["Nombre", "Usuario", "ServiceNow ID", "Estado"]]
-    for u in users:
-        rows.append([u["nombre"], u["usuario"], u["snow_id"], str(u["estado"])])
+    orig_headers, _ = user_rows()
+    orig_lower = [h.lower() for h in orig_headers]
+    has_snow_header = any("servicenow" in h or "sys_id" in h or "snow" in h for h in orig_lower)
+    has_any_snow = any(bool(str(u.get("snow_id", "")).strip()) for u in users)
+
+    if has_snow_header or has_any_snow:
+        headers = ["Nombre", "Usuario", "ServiceNow ID", "Estado"]
+        rows = [headers]
+        for u in users:
+            rows.append([
+                u.get("nombre", "").strip(),
+                u.get("usuario", "").strip(),
+                u.get("snow_id", "").strip(),
+                "1" if str(u.get("estado", "1")).strip() == "1" else "0"
+            ])
+    else:
+        headers = ["Nombre", "Usuario", "Estado"]
+        rows = [headers]
+        for u in users:
+            rows.append([
+                u.get("nombre", "").strip(),
+                u.get("usuario", "").strip(),
+                "1" if str(u.get("estado", "1")).strip() == "1" else "0"
+            ])
     write_csv_file(USERS_FILE, rows)
 
 
@@ -748,9 +799,9 @@ def state():
 @app.post("/api/users")
 def add_user():
     d = request.get_json(force=True)
-    required = ["nombre", "usuario", "snow_id"]
+    required = ["nombre", "usuario"]
     if any(not str(d.get(k, "")).strip() for k in required):
-        return jsonify(error="Completa Nombre, Usuario y ServiceNow ID."), 400
+        return jsonify(error="Completa Nombre y Usuario."), 400
     _, users = user_rows()
     username = d["usuario"].strip()
     if any(u["usuario"].lower() == username.lower() for u in users):
@@ -759,7 +810,7 @@ def add_user():
     u = {
         "nombre": d["nombre"].strip(),
         "usuario": username,
-        "snow_id": d["snow_id"].strip(),
+        "snow_id": str(d.get("snow_id", "")).strip(),
         "estado": estado
     }
     users.append(u)
