@@ -14,6 +14,8 @@ from flask import Flask, jsonify, request, render_template
 from Programas.PipelineUtils import ensure_execution_summary_csv, append_execution_summary
 
 app = Flask(__name__)
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 ROOT_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = ROOT_DIR / "Especificaciones"
@@ -867,6 +869,7 @@ def update_week():
     d = request.get_json(force=True)
     start = d.get("fecha_inicio", "")
     assignments = d.get("asignaciones", {})
+    dias_payload = d.get("dias", {})
     try:
         monday = datetime.strptime(start, "%Y-%m-%d").date()
     except ValueError:
@@ -876,15 +879,6 @@ def update_week():
 
     _, users = user_rows()
     active = {u["usuario"] for u in users if u["estado"] == "1"}
-
-    for role in ROLES:
-        val = assignments.get(role, "")
-        if val and val not in active:
-            return jsonify(error=f"{val} no está habilitado para recibir tickets (Estado 0)."), 400
-
-    assigned_vals = [v for v in assignments.values() if v]
-    if len(assigned_vals) != len(set(assigned_vals)):
-        return jsonify(error="Selecciona una persona diferente para cada rol de turno."), 400
 
     headers, rows = read_shifts()
     date_col = "Fecha" if "Fecha" in headers else headers[0]
@@ -897,9 +891,49 @@ def update_week():
             row = {h: "" for h in headers}
             row[date_col] = date_str
             rows.append(row)
-        for role in ROLES:
-            if role in headers:
-                row[role] = assignments.get(role, "")
+
+        if dias_payload and date_str in dias_payload:
+            day_data = dias_payload[date_str]
+            for role in ROLES:
+                val = day_data.get(role, "").strip()
+                if val and val not in active:
+                    return jsonify(error=f"'{val}' en {date_str} no está habilitado (Estado 0)."), 400
+                if role in headers:
+                    row[role] = val
+        else:
+            # Lógica operativa estándar con espacios vacíos
+            if offset < 5:  # Lunes a Viernes
+                t1 = assignments.get("turno_1", assignments.get("Turno 1", "")).strip()
+                t2 = assignments.get("turno_2", assignments.get("Turno 2", "")).strip()
+                t3 = assignments.get("turno_3", assignments.get("Turno 3", "")).strip()
+                for val in [t1, t2, t3]:
+                    if val and val not in active:
+                        return jsonify(error=f"'{val}' no está habilitado (Estado 0)."), 400
+                row["Turno 1"] = t1
+                row["Turno 2"] = t2
+                row["Turno 3"] = t3
+                row["Turno 4"] = ""
+                row["Stand-by"] = ""
+            elif offset == 5:  # Sábado
+                t4 = assignments.get("sabado_turno_4", assignments.get("Turno 4", "")).strip()
+                sb = assignments.get("sabado_standby", assignments.get("Stand-by", "")).strip()
+                for val in [t4, sb]:
+                    if val and val not in active:
+                        return jsonify(error=f"'{val}' no está habilitado (Estado 0)."), 400
+                row["Turno 1"] = ""
+                row["Turno 2"] = ""
+                row["Turno 3"] = ""
+                row["Turno 4"] = t4
+                row["Stand-by"] = sb
+            else:  # Domingo
+                sb = assignments.get("domingo_standby", assignments.get("Stand-by", "")).strip()
+                if sb and sb not in active:
+                    return jsonify(error=f"'{sb}' no está habilitado (Estado 0)."), 400
+                row["Turno 1"] = ""
+                row["Turno 2"] = ""
+                row["Turno 3"] = ""
+                row["Turno 4"] = ""
+                row["Stand-by"] = sb
 
     def parse_shift_date(r):
         val = r.get(date_col, "")
@@ -910,7 +944,7 @@ def update_week():
 
     rows.sort(key=parse_shift_date)
     save_shifts(headers, rows)
-    return jsonify(ok=True, message=f"Turnos actualizados para la semana del {monday.strftime('%d/%m/%Y')}.")
+    return jsonify(ok=True, message=f"Turnos guardados correctamente para la semana del {monday.strftime('%d/%m/%Y')}.")
 
 
 @app.get("/api/health")

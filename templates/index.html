@@ -506,6 +506,76 @@
       font-weight: 600;
     }
 
+    /* Member Checklists */
+    .checklist-box {
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      background: #ffffff;
+      max-height: 165px;
+      overflow-y: auto;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .checklist-box::-webkit-scrollbar {
+      width: 6px;
+    }
+    .checklist-box::-webkit-scrollbar-thumb {
+      background: var(--slate-300);
+      border-radius: 3px;
+    }
+    .checklist-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--slate-800);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease;
+      line-height: 1.35;
+    }
+    .checklist-item:hover {
+      background: var(--slate-100);
+    }
+    .checklist-item input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      accent-color: var(--primary);
+      cursor: pointer;
+      margin: 0;
+      flex-shrink: 0;
+    }
+    .checklist-item.checked {
+      background: #f0fdfa;
+    }
+    .checklist-item.disabled-user {
+      color: var(--slate-400);
+    }
+    .checklist-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+    .checklist-btn-link {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0 4px;
+      text-decoration: underline;
+    }
+    .checklist-btn-link:hover {
+      color: var(--primary-dark);
+    }
+
     /* Shifts Grid */
     .shifts-grid {
       display: grid;
@@ -526,6 +596,69 @@
       font-weight: 700;
       color: var(--slate-800);
       margin-bottom: 8px;
+    }
+
+    /* Mosaico de Días y Feriados */
+    .mosaic-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+    @media (max-width: 1100px) {
+      .mosaic-grid {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      }
+    }
+    .mosaic-day-card {
+      border: 2px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 12px 8px;
+      background: #ffffff;
+      text-align: center;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .mosaic-day-card.mode-laborable {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+    .mosaic-day-card.mode-feriado_t4_sb {
+      border-color: #f59e0b;
+      background: #fffbeb;
+    }
+    .mosaic-day-card.mode-feriado_sb {
+      border-color: #ea580c;
+      background: #fff7ed;
+    }
+    .mosaic-day-card.mode-descanso {
+      border-color: #cbd5e1;
+      background: #f1f5f9;
+      opacity: 0.8;
+    }
+    .mosaic-day-title {
+      font-weight: 800;
+      font-size: 13px;
+      color: var(--slate-900);
+    }
+    .mosaic-day-date {
+      font-size: 11px;
+      color: var(--slate-500);
+      font-weight: 600;
+    }
+    .mosaic-mode-select {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--slate-300);
+      background: #ffffff;
+      color: var(--slate-800);
+      cursor: pointer;
+      width: 100%;
+      text-align: center;
     }
 
     /* System Health Banner */
@@ -1230,9 +1363,15 @@
               <input id="newIncGroupName" required placeholder="Ej. Transferencias">
             </div>
             <div class="field">
-              <label for="newIncGroupMembers">Integrantes Capacitados</label>
-              <select id="newIncGroupMembers" multiple></select>
-              <span class="field-hint">Selecciona con Ctrl / Cmd + clic</span>
+              <div class="checklist-actions">
+                <label style="font-weight:600;font-size:12px;">Integrantes Capacitados (<span id="newIncCount">0</span>):</label>
+                <div>
+                  <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('newIncGroupMembers', true)">Todos</button>
+                  ·
+                  <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('newIncGroupMembers', false)">Ninguno</button>
+                </div>
+              </div>
+              <div id="newIncGroupMembers" class="checklist-box" style="max-height:140px;"></div>
             </div>
           </div>
           <div style="margin-top:16px;">
@@ -1269,9 +1408,15 @@
               <input id="newReqGroupName" required placeholder="Ej. Certificados">
             </div>
             <div class="field">
-              <label for="newReqGroupMembers">Integrantes Capacitados</label>
-              <select id="newReqGroupMembers" multiple></select>
-              <span class="field-hint">Selecciona con Ctrl / Cmd + clic</span>
+              <div class="checklist-actions">
+                <label style="font-weight:600;font-size:12px;">Integrantes Capacitados (<span id="newReqCount">0</span>):</label>
+                <div>
+                  <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('newReqGroupMembers', true)">Todos</button>
+                  ·
+                  <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('newReqGroupMembers', false)">Ninguno</button>
+                </div>
+              </div>
+              <div id="newReqGroupMembers" class="checklist-box" style="max-height:140px;"></div>
             </div>
           </div>
           <div style="margin-top:16px;">
@@ -1298,16 +1443,111 @@
         <div class="panel-header">
           <div>
             <h2>Programación de Turnos Semanales</h2>
-            <p class="panel-desc">Selecciona el lunes de la semana y distribuye los 5 roles operativos en <code>Especificaciones/Turnos.csv</code>.</p>
+            <p class="panel-desc">Programa el cuadrante semanal y gestiona feriados (mover Turno 4 a viernes o extender Stand-by a lunes).</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label for="weekDate" style="font-weight:700;font-size:13px;color:var(--slate-700);">Semana (Lunes):</label>
+            <input type="date" id="weekDate" required style="font-weight:600;padding:8px 12px;border:1px solid var(--slate-300);border-radius:8px;">
           </div>
         </div>
-        <div class="field" style="max-width:280px;">
-          <label for="weekDate">Lunes de la semana:</label>
-          <input type="date" id="weekDate" required>
+
+        <!-- Mosaico Interactivo de 7 Días -->
+        <div style="margin-bottom:22px;background:#ffffff;border:1px solid var(--slate-200);border-radius:12px;padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+            <div>
+              <h3 style="font-size:14px;font-weight:700;color:var(--slate-800);display:flex;align-items:center;gap:6px;">
+                <span>🗓️</span> Mosaico de Jornadas Semanales y Feriados
+              </h3>
+              <p style="font-size:12px;color:var(--slate-600);margin-top:2px;">Configura condiciones extraordinarias para cada día. Haz clic en el selector del día para convertirlo en feriado o guardia.</p>
+            </div>
+            <div>
+              <button type="button" class="btn" style="padding:5px 12px;font-size:11px;" onclick="resetWeekMosaicToDefault()">↺ Restablecer semana estándar</button>
+            </div>
+          </div>
+          <div id="shiftMosaic" class="mosaic-grid"></div>
         </div>
-        <div id="weekgrid" class="shifts-grid"></div>
+
+        <!-- Secciones Operativas: Laboral vs Fin de Semana -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(360px, 1fr));gap:20px;margin-bottom:22px;">
+          
+          <!-- Bloque Lunes a Viernes -->
+          <div class="panel" style="margin-bottom:0;background:#f8fafc;border:1px solid #cbd5e1;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <h3 style="font-size:15px;color:var(--slate-900);display:flex;align-items:center;gap:6px;">
+                <span>💼</span> Lunes a Viernes (Días Laborables)
+              </h3>
+              <span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:11px;">Turno 4 y Stand-by: Vacíos</span>
+            </div>
+            <p style="font-size:12px;color:var(--slate-600);margin-bottom:14px;">Asigna los técnicos encargados de los tres turnos ordinarios entre semana:</p>
+            
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div class="field">
+                <label for="shiftT1" style="font-size:12px;font-weight:600;">Turno 1 · Mañana (06:00 – 14:00) *</label>
+                <select id="shiftT1" class="shift-select" required></select>
+              </div>
+              <div class="field">
+                <label for="shiftT2" style="font-size:12px;font-weight:600;">Turno 2 · Tarde (14:00 – 22:00) *</label>
+                <select id="shiftT2" class="shift-select" required></select>
+              </div>
+              <div class="field">
+                <label for="shiftT3" style="font-size:12px;font-weight:600;">Turno 3 · Noche (22:00 – 06:00) *</label>
+                <select id="shiftT3" class="shift-select" required></select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bloque Sábado y Domingo -->
+          <div class="panel" style="margin-bottom:0;background:#fffdfa;border:1px solid #fed7aa;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <h3 style="font-size:15px;color:#9a3412;display:flex;align-items:center;gap:6px;">
+                <span>🛡️</span> Fines de Semana (Guardias)
+              </h3>
+              <span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px;">Turnos 1, 2 y 3: Vacíos</span>
+            </div>
+            <p style="font-size:12px;color:var(--slate-600);margin-bottom:14px;">Asigna el personal de guardia para sábado y domingo:</p>
+            
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div class="field">
+                <label for="shiftSabT4" style="font-size:12px;font-weight:600;color:#9a3412;">Sábado · Turno 4 (Guardia Diurna 06:00 – 14:00)</label>
+                <select id="shiftSabT4" class="shift-select"></select>
+              </div>
+              <div class="field">
+                <label for="shiftSabSB" style="font-size:12px;font-weight:600;color:#9a3412;">Sábado · Stand-by (Guardia Tarde/Noche 14:00+) *</label>
+                <select id="shiftSabSB" class="shift-select" required></select>
+              </div>
+              <div class="field">
+                <label for="shiftDomSB" style="font-size:12px;font-weight:600;color:#9a3412;">Domingo · Stand-by (Guardia 24 Horas) *</label>
+                <select id="shiftDomSB" class="shift-select" required></select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vista Previa Dinámica del Cuadrante Semanal -->
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+            <h4 style="font-size:14px;font-weight:700;color:var(--slate-800);">Vista Previa del Cuadrante a Guardar (<span id="previewWeekLabel">Semana</span>):</h4>
+            <span style="font-size:12px;color:var(--slate-500);">Los guiones <code>—</code> indican los campos que se guardarán vacíos en <code>Turnos.csv</code></span>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:16%;">Día / Fecha</th>
+                  <th style="width:17%;">Turno 1 (06:00-14:00)</th>
+                  <th style="width:17%;">Turno 2 (14:00-22:00)</th>
+                  <th style="width:17%;">Turno 3 (22:00-06:00)</th>
+                  <th style="width:17%;">Turno 4 (Guardia Diurna)</th>
+                  <th style="width:16%;">Stand-by (Guardia)</th>
+                </tr>
+              </thead>
+              <tbody id="weekPreviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div style="display:flex;gap:12px;align-items:center;">
-          <button id="saveWeek" class="btn primary">💾 Guardar turnos de la semana</button>
+          <button id="saveWeek" class="btn primary" style="padding:10px 22px;font-size:14px;">💾 Guardar turnos de la semana en Turnos.csv</button>
           <span class="text-muted" style="font-size:12px;">Solo técnicos habilitados (Estado = 1)</span>
         </div>
       </div>
@@ -1315,8 +1555,8 @@
       <div class="panel">
         <div class="panel-header">
           <div>
-            <h2>Cuadrante Registrado en Turnos.csv</h2>
-            <p class="panel-desc">Fechas registradas en el archivo de especificación.</p>
+            <h2>Historial Completo Registrado en Turnos.csv</h2>
+            <p class="panel-desc">Visualización de las últimas semanas registradas en el archivo de especificación.</p>
           </div>
         </div>
         <div class="table-container">
@@ -1380,15 +1620,56 @@
       $(id).innerHTML = (groups || []).map(g => `<option value="${esc(g.nombre)}">${esc(g.nombre)}</option>`).join("");
     }
 
-    function fillMembersSelect(id) {
+    function onMemberCheckChange(checkbox, containerId, countId) {
+      const label = checkbox.closest('.checklist-item');
+      if (label) {
+        label.classList.toggle('checked', checkbox.checked);
+      }
+      const container = $(containerId);
+      if (container && countId) {
+        const checkedCount = container.querySelectorAll('input[type="checkbox"]:checked').length;
+        const countEl = $(countId);
+        if (countEl) countEl.textContent = checkedCount;
+      }
+    }
+
+    function toggleAllCheckboxes(containerId, checkState) {
+      const container = $(containerId);
+      if (!container) return;
+      container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = checkState;
+        const label = cb.closest('.checklist-item');
+        if (label) label.classList.toggle('checked', checkState);
+      });
+      const countId = `${containerId}_count`;
+      const countEl = $(countId);
+      if (countEl) {
+        const checkedCount = container.querySelectorAll('input[type="checkbox"]:checked').length;
+        countEl.textContent = checkedCount;
+      }
+    }
+
+    function fillMembersChecklist(id, countId) {
       const el = $(id);
-      const selected = [...el.selectedOptions].map(o => o.value);
+      if (!el) return;
+      const prevChecked = Array.from(el.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
       const sorted = (state?.users || []).slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
-      el.innerHTML = sorted.map(u => `
-        <option value="${esc(u.usuario)}" ${selected.includes(u.usuario) ? "selected" : ""}>
-          ${esc(u.nombre)} · ${esc(u.usuario)} ${String(u.estado) === "1" ? "" : "(deshabilitado)"}
-        </option>
-      `).join("");
+      el.innerHTML = sorted.map(u => {
+        const isChecked = prevChecked.includes(u.usuario);
+        const isEnabled = String(u.estado) === "1";
+        return `
+          <label class="checklist-item ${isChecked ? 'checked' : ''} ${!isEnabled ? 'disabled-user' : ''}">
+            <input type="checkbox" value="${esc(u.usuario)}" ${isChecked ? 'checked' : ''} onchange="onMemberCheckChange(this, '${id}', '${countId}')">
+            <span>
+              <strong>${esc(u.nombre)}</strong>
+              <code style="font-size:11px;color:var(--slate-500);margin-left:4px;">(${esc(u.usuario)})</code>
+              ${isEnabled ? '' : '<span style="color:#ef4444;font-size:10px;margin-left:4px;">[deshabilitado]</span>'}
+            </span>
+          </label>
+        `;
+      }).join("");
+      const countEl = $(countId);
+      if (countEl) countEl.textContent = prevChecked.length;
     }
 
     function renderUsers() {
@@ -1425,7 +1706,10 @@
       const active = (state?.users || []).slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
 
       const filtered = groups.filter(g => g.nombre.toLowerCase().includes(search));
-      $(target).innerHTML = filtered.map((g, idx) => `
+      $(target).innerHTML = filtered.map((g, idx) => {
+        const containerId = `${kind}_${idx}`;
+        const countId = `${kind}_${idx}_count`;
+        return `
         <article class="group-card">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <h3>${esc(g.nombre)}</h3>
@@ -1434,23 +1718,40 @@
           <div class="members-tags">
             ${g.miembros.map(m => `<span class="member-tag" title="${esc(userName(m))}">${esc(m)}</span>`).join("") || '<span class="text-muted" style="font-size:12px;">Sin integrantes asignados</span>'}
           </div>
-          <div class="field">
-            <label style="font-size:11px;">Capacitados asignados:</label>
-            <select id="${kind}_${idx}" multiple style="min-height:90px;">
-              ${active.map(u => `
-                <option value="${esc(u.usuario)}" ${g.miembros.includes(u.usuario) ? "selected" : ""}>
-                  ${esc(u.nombre)} (${esc(u.usuario)}) ${String(u.estado) === "1" ? "" : "[deshabilitado]"}
-                </option>
-              `).join("")}
-            </select>
+          <div class="field" style="margin-bottom:0;">
+            <div class="checklist-actions">
+              <label style="font-size:11px;font-weight:600;color:var(--slate-700);">Capacitados asignados (<span id="${countId}">${g.miembros.length}</span>):</label>
+              <div>
+                <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('${containerId}', true)">Todos</button>
+                ·
+                <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('${containerId}', false)">Ninguno</button>
+              </div>
+            </div>
+            <div id="${containerId}" class="checklist-box">
+              ${active.map(u => {
+                const isChecked = g.miembros.includes(u.usuario);
+                const isEnabled = String(u.estado) === "1";
+                return `
+                <label class="checklist-item ${isChecked ? 'checked' : ''} ${!isEnabled ? 'disabled-user' : ''}">
+                  <input type="checkbox" value="${esc(u.usuario)}" ${isChecked ? 'checked' : ''} onchange="onMemberCheckChange(this, '${containerId}', '${countId}')">
+                  <span>
+                    <strong>${esc(u.nombre)}</strong>
+                    <code style="font-size:11px;color:var(--slate-500);margin-left:4px;">(${esc(u.usuario)})</code>
+                    ${isEnabled ? '' : '<span style="color:#ef4444;font-size:10px;margin-left:4px;">[deshabilitado]</span>'}
+                  </span>
+                </label>
+                `;
+              }).join("")}
+            </div>
           </div>
-          <div>
-            <button class="btn primary" style="width:100%;font-size:12px;" onclick="saveGroup('${kind}', '${esc(g.nombre)}', '${kind}_${idx}')">
+          <div style="margin-top:8px;">
+            <button class="btn primary" style="width:100%;font-size:12px;" onclick="saveGroup('${kind}', '${esc(g.nombre)}', '${containerId}')">
               💾 Guardar cambios de grupo
             </button>
           </div>
         </article>
-      `).join("") || '<div class="empty-state" style="grid-column:1/-1;">No hay grupos coincidentes.</div>';
+      `;
+      }).join("") || '<div class="empty-state" style="grid-column:1/-1;">No hay grupos coincidentes.</div>';
     }
 
     function renderShifts() {
@@ -1462,17 +1763,216 @@
       `).join("") || `<tr><td colspan="${headers.length}" class="empty-state">No hay turnos registrados en Turnos.csv</td></tr>`;
     }
 
-    function renderWeek() {
+    function populateShiftSelects() {
       const users = activeUsers().slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
-      $("weekgrid").innerHTML = roles.map(role => `
-        <div class="shift-role-card">
-          <label>${esc(role)}</label>
-          <select data-role="${esc(role)}" style="width:100%;">
-            <option value="">Seleccionar técnico...</option>
-            ${users.map(u => `<option value="${esc(u.usuario)}">${esc(u.nombre)} · ${esc(u.usuario)}</option>`).join("")}
-          </select>
-        </div>
-      `).join("");
+      const optHtml = '<option value="">(Sin asignar / Vacío)</option>' +
+        users.map(u => `<option value="${esc(u.usuario)}">${esc(u.nombre)} · ${esc(u.usuario)}</option>`).join("");
+      ["shiftT1", "shiftT2", "shiftT3", "shiftSabT4", "shiftSabSB", "shiftDomSB"].forEach(id => {
+        const el = $(id);
+        if (el) {
+          const prev = el.value;
+          el.innerHTML = optHtml;
+          if (prev) el.value = prev;
+        }
+      });
+    }
+
+    function getSelectedMondayDate() {
+      const raw = $("weekDate")?.value;
+      if (!raw) return null;
+      const parts = raw.split("-");
+      if (parts.length !== 3) return null;
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    }
+
+    function formatDateDMY(d) {
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    let weekDayModes = ["laborable", "laborable", "laborable", "laborable", "laborable", "feriado_t4_sb", "feriado_sb"];
+
+    function resetWeekMosaicToDefault() {
+      weekDayModes = ["laborable", "laborable", "laborable", "laborable", "laborable", "feriado_t4_sb", "feriado_sb"];
+      renderShiftMosaic();
+      renderWeekPreview();
+    }
+
+    function renderShiftMosaic() {
+      const monday = getSelectedMondayDate();
+      const container = $("shiftMosaic");
+      if (!monday || !container) return;
+
+      const dayNames = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+
+      container.innerHTML = dayNames.map((dName, offset) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + offset);
+        const dStr = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const mode = weekDayModes[offset] || (offset < 5 ? "laborable" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
+
+        return `
+          <div class="mosaic-day-card mode-${mode}" id="mosaicCard_${offset}">
+            <div class="mosaic-day-title">${dName}</div>
+            <div class="mosaic-day-date">${dStr}</div>
+            <select class="mosaic-mode-select" onchange="onMosaicModeChange(${offset}, this.value)">
+              <option value="laborable" ${mode === 'laborable' ? 'selected' : ''}>💼 (T1-T3)</option>
+              <option value="feriado_t4_sb" ${mode === 'feriado_t4_sb' ? 'selected' : ''}>🛡️ (T4 + SB)</option>
+              <option value="feriado_sb" ${mode === 'feriado_sb' ? 'selected' : ''}>🛡️ (SB)</option>
+            </select>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function onMosaicModeChange(offset, newMode) {
+      weekDayModes[offset] = newMode;
+      const card = $(`mosaicCard_${offset}`);
+      if (card) {
+        card.className = `mosaic-day-card mode-${newMode}`;
+      }
+      renderWeekPreview();
+    }
+
+    function renderWeekPreview() {
+      const monday = getSelectedMondayDate();
+      const tbody = $("weekPreviewBody");
+      const lbl = $("previewWeekLabel");
+      if (!monday || !tbody) return;
+
+      const dayNames = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+      const t1 = $("shiftT1")?.value || "";
+      const t2 = $("shiftT2")?.value || "";
+      const t3 = $("shiftT3")?.value || "";
+      const sabT4 = $("shiftSabT4")?.value || "";
+      const sabSB = $("shiftSabSB")?.value || "";
+      const domSB = $("shiftDomSB")?.value || "";
+
+      if (lbl) {
+        lbl.textContent = `Semana del ${formatDateDMY(monday)}`;
+      }
+
+      const rowsHtml = dayNames.map((dName, offset) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + offset);
+        const dStr = formatDateDMY(d);
+        const mode = weekDayModes[offset] || (offset < 5 ? "laborable" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
+
+        let cellT1 = '<span style="color:var(--slate-400);">—</span>';
+        let cellT2 = '<span style="color:var(--slate-400);">—</span>';
+        let cellT3 = '<span style="color:var(--slate-400);">—</span>';
+        let cellT4 = '<span style="color:var(--slate-400);">—</span>';
+        let cellSB = '<span style="color:var(--slate-400);">—</span>';
+
+        let modeBadge = '';
+        let rowBg = '';
+
+        if (mode === "laborable") {
+          modeBadge = '<span class="badge" style="background:#e0f2fe;color:#0369a1;font-size:12px;margin-left:6px;" title="T1 - T3">💼</span>';
+          cellT1 = t1 ? `<span class="badge active" title="${esc(userName(t1))}">${esc(t1)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+          cellT2 = t2 ? `<span class="badge active" title="${esc(userName(t2))}">${esc(t2)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+          cellT3 = t3 ? `<span class="badge active" title="${esc(userName(t3))}">${esc(t3)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+        } else if (mode === "feriado_t4_sb") {
+          modeBadge = '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:12px;margin-left:6px;" title="T4 + SB">🛡️</span>';
+          rowBg = 'background:#fffdf5;';
+          cellT4 = sabT4 ? `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(sabT4))}">${esc(sabT4)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+          cellSB = sabSB ? `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(sabSB))}">${esc(sabSB)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+        } else if (mode === "feriado_sb") {
+          modeBadge = '<span class="badge" style="background:#ffedd5;color:#c2410c;font-size:12px;margin-left:6px;" title="SB">🛡️</span>';
+          rowBg = 'background:#fffaf0;';
+          const effSB = (offset === 6 ? domSB : (sabSB || domSB));
+          cellSB = effSB ? `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(effSB))}">${esc(effSB)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+        } else {
+          modeBadge = '<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:12px;margin-left:6px;" title="Libre">⛔</span>';
+          rowBg = 'background:#f8fafc;';
+        }
+
+        return `
+          <tr style="${rowBg}">
+            <td style="font-weight:600;white-space:nowrap;">
+              ${dName} <span style="font-size:11px;color:var(--slate-500);font-weight:normal;">(${dStr})</span>
+              ${modeBadge}
+            </td>
+            <td>${cellT1}</td>
+            <td>${cellT2}</td>
+            <td>${cellT3}</td>
+            <td>${cellT4}</td>
+            <td>${cellSB}</td>
+          </tr>
+        `;
+      }).join("");
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    function syncWeekSelectorsFromState() {
+      const monday = getSelectedMondayDate();
+      if (!monday) return;
+      const rows = state?.turnos?.rows || [];
+
+      // Detectar modos de cada día según registros existentes en Turnos.csv
+      weekDayModes = [];
+      for (let offset = 0; offset < 7; offset++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + offset);
+        const dStr = formatDateDMY(d);
+        const r = rows.find(x => x["Fecha"] === dStr);
+
+        if (r) {
+          const hasT123 = !!(r["Turno 1"] || r["Turno 2"] || r["Turno 3"]);
+          const hasT4 = !!r["Turno 4"];
+          const hasSB = !!r["Stand-by"];
+
+          if (hasT123) {
+            weekDayModes.push("laborable");
+          } else if (hasT4 && hasSB) {
+            weekDayModes.push("feriado_t4_sb");
+          } else if (hasSB) {
+            weekDayModes.push("feriado_sb");
+          } else if (!hasT123 && !hasT4 && !hasSB) {
+            weekDayModes.push("descanso");
+          } else {
+            weekDayModes.push(offset < 5 ? "laborable" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
+          }
+        } else {
+          weekDayModes.push(offset < 5 ? "laborable" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
+        }
+      }
+
+      const mondayStr = formatDateDMY(monday);
+      const sabado = new Date(monday);
+      sabado.setDate(monday.getDate() + 5);
+      const sabadoStr = formatDateDMY(sabado);
+      const domingo = new Date(monday);
+      domingo.setDate(monday.getDate() + 6);
+      const domingoStr = formatDateDMY(domingo);
+
+      const rowMon = rows.find(r => r["Fecha"] === mondayStr);
+      const rowSab = rows.find(r => r["Fecha"] === sabadoStr);
+      const rowDom = rows.find(r => r["Fecha"] === domingoStr);
+
+      if (rowMon) {
+        if ($("shiftT1")) $("shiftT1").value = rowMon["Turno 1"] || "";
+        if ($("shiftT2")) $("shiftT2").value = rowMon["Turno 2"] || "";
+        if ($("shiftT3")) $("shiftT3").value = rowMon["Turno 3"] || "";
+      }
+      if (rowSab) {
+        if ($("shiftSabT4")) $("shiftSabT4").value = rowSab["Turno 4"] || "";
+        if ($("shiftSabSB")) $("shiftSabSB").value = rowSab["Stand-by"] || "";
+      }
+      if (rowDom) {
+        if ($("shiftDomSB")) $("shiftDomSB").value = rowDom["Stand-by"] || "";
+      }
+
+      renderShiftMosaic();
+      renderWeekPreview();
+    }
+
+    function renderWeek() {
+      populateShiftSelects();
+      syncWeekSelectorsFromState();
     }
 
     function render() {
@@ -1487,8 +1987,8 @@
 
       fillGroupSelect("incSelect", state?.incidentes);
       fillGroupSelect("reqSelect", state?.requerimientos);
-      fillMembersSelect("newIncGroupMembers");
-      fillMembersSelect("newReqGroupMembers");
+      fillMembersChecklist("newIncGroupMembers", "newIncCount");
+      fillMembersChecklist("newReqGroupMembers", "newReqCount");
 
       renderUsers();
       renderGroups("incidentes");
@@ -2208,8 +2708,17 @@
       }
     }
 
-    async function saveGroup(kind, name, selectId) {
-      const members = [...$(selectId).selectedOptions].map(o => o.value);
+    async function saveGroup(kind, name, containerId) {
+      const container = $(containerId);
+      let members = [];
+      if (container) {
+        if (container.tagName === 'SELECT') {
+          members = [...container.selectedOptions].map(o => o.value);
+        } else {
+          const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+          members = Array.from(checkboxes).map(cb => cb.value);
+        }
+      }
       try {
         await api(`/api/groups/${kind}/${encodeURIComponent(name)}`, {
           method: "PUT",
@@ -2224,13 +2733,23 @@
 
     async function createGroup(kind, nameId, membersId, formId) {
       const nombre = $(nameId).value.trim();
-      const miembros = [...$(membersId).selectedOptions].map(o => o.value);
+      const container = $(membersId);
+      let miembros = [];
+      if (container) {
+        if (container.tagName === 'SELECT') {
+          miembros = [...container.selectedOptions].map(o => o.value);
+        } else {
+          const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+          miembros = Array.from(checkboxes).map(cb => cb.value);
+        }
+      }
       try {
         const d = await api(`/api/groups/${kind}`, {
           method: "POST",
           body: JSON.stringify({ nombre, miembros })
         });
         $(formId).reset();
+        toggleAllCheckboxes(membersId, false);
         await load();
         notice(d.message || "Grupo creado.");
       } catch (e) {
@@ -2265,22 +2784,73 @@
 
     $("saveWeek").addEventListener("click", async () => {
       const date = $("weekDate").value;
-      const assignments = {};
-      document.querySelectorAll("#weekgrid select").forEach(s => assignments[s.dataset.role] = s.value);
       if (!date) {
         notice("Selecciona el lunes de la semana.", "err");
         return;
       }
+      const monday = getSelectedMondayDate();
+      if (monday && monday.getDay() !== 1) {
+        notice("La fecha seleccionada debe corresponder a un día lunes.", "err");
+        return;
+      }
+
+      const diasPayload = {};
+      for (let offset = 0; offset < 7; offset++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + offset);
+        const dStr = formatDateDMY(d);
+        const mode = weekDayModes[offset] || "laborable";
+
+        if (mode === "laborable") {
+          diasPayload[dStr] = {
+            "Turno 1": $("shiftT1")?.value || "",
+            "Turno 2": $("shiftT2")?.value || "",
+            "Turno 3": $("shiftT3")?.value || "",
+            "Turno 4": "",
+            "Stand-by": ""
+          };
+        } else if (mode === "feriado_t4_sb") {
+          diasPayload[dStr] = {
+            "Turno 1": "",
+            "Turno 2": "",
+            "Turno 3": "",
+            "Turno 4": $("shiftSabT4")?.value || "",
+            "Stand-by": $("shiftSabSB")?.value || ""
+          };
+        } else if (mode === "feriado_sb") {
+          diasPayload[dStr] = {
+            "Turno 1": "",
+            "Turno 2": "",
+            "Turno 3": "",
+            "Turno 4": "",
+            "Stand-by": (offset === 6 ? $("shiftDomSB")?.value : ($("shiftSabSB")?.value || $("shiftDomSB")?.value)) || ""
+          };
+        } else {
+          diasPayload[dStr] = {
+            "Turno 1": "",
+            "Turno 2": "",
+            "Turno 3": "",
+            "Turno 4": "",
+            "Stand-by": ""
+          };
+        }
+      }
+
       try {
         const d = await api("/api/shifts/week", {
           method: "PUT",
-          body: JSON.stringify({ fecha_inicio: date, asignaciones: assignments })
+          body: JSON.stringify({ fecha_inicio: date, dias: diasPayload })
         });
         await load();
-        notice(d.message);
+        notice(d.message || "Turnos semanales guardados.");
       } catch (e) {
         notice(e.message, "err");
       }
+    });
+
+    $("weekDate")?.addEventListener("change", syncWeekSelectorsFromState);
+    ["shiftT1", "shiftT2", "shiftT3", "shiftSabT4", "shiftSabSB", "shiftDomSB"].forEach(id => {
+      $(id)?.addEventListener("change", renderWeekPreview);
     });
 
     $("refreshDashboard").addEventListener("click", () => {
