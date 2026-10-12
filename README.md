@@ -66,7 +66,8 @@ Asignador/
 ├── templates/                              # Plantillas del panel de administración (index.html)
 ├── Assigner_Incidents.py                   # Asignador de incidentes (Soporta HNLP-MC [default] y TF-IDF)
 ├── Assigner_Requirements.py                # Asignador de requerimientos (Soporta HNLP-MC [default] y TF-IDF)
-├── RPA_ServiceNow_DOM_E2E.py               # Orquestador RPA E2E mediante inyección JavaScript DOM (Recomendado)
+├── RPA_ServiceNow_DOM_Web.py               # Controlador Web RPA desatendido con timeouts y cierre garantizado
+├── RPA_ServiceNow_DOM_E2E.py               # Orquestador RPA E2E CLI interactivo mediante inyección JavaScript DOM
 ├── RPA_ServiceNow_E2E.py                   # Orquestador RPA E2E mediante coordenadas de pantalla
 ├── Programas/
 │   ├── PipelineUtils.py                    # Logging (ExecutionLogger), utilidades de pipeline, limpieza CSV y fecha regional OS
@@ -272,10 +273,29 @@ py app.py
 ```
 Abre **http://127.0.0.1:5000** en el navegador.
 
-- **Directamente integrado al proyecto**: Opera sobre los archivos reales en `Especificaciones/` (`Grupos - Usuarios.csv`, `Grupos - Incidentes(Grupos).csv`, `Grupos - Requerimientos(Grupos).csv`, `Turnos.csv`), `Salida/` (`reporte_detalle_asignaciones.csv`, archivos `.log`) y `Entrada/` (`incident.csv`, `sc_req_item.csv`).
-- **Logs y Métricas en Vivo**: Selector dinámico de archivos de log generados en `Salida/`, contador de `ADVERTENCIA`, refresco automático cada 5 segundos y gráficas interactivas por día y por técnico para incidentes y requerimientos.
-- **Gestión de Personal y Especialidades**: Alta/baja de integrantes, activación/desactivación del flag de asignación (`Estado = 1/0`), creación de nuevos grupos y asignación de técnicos por categoría.
-- **Programación de Turnos**: Asignación semanal por roles (`Turno 1` a `Turno 4`, `Stand-by`) sincronizada con `Especificaciones/Turnos.csv`.
+- **Directamente integrado al proyecto**: Opera sobre los archivos reales en `Especificaciones/` (`Grupos - Usuarios.csv`, `Grupos - Incidentes(Grupos).csv`, `Grupos - Requerimientos(Grupos).csv`, `Turnos.csv`), `Salida/` (`reporte_detalle_asignaciones.csv`, `resumen_ejecuciones.csv`, archivos `.log`) y `Entrada/` (`incident.csv`, `sc_req_item.csv`).
+- **Centro de Control y Automatización RPA en Vivo**:
+  - Lanzamiento directo de cualquiera de las operaciones del menú (Opción 6: Ciclo Completo Periódico por defecto, Opción 5: E2E Completo, Opciones 1-4 por flujo, Opción 7: Limpieza CSVs, Opción 8: Solo ML).
+  - Configuración en caliente: Alternar entre descarga en vivo desde ServiceNow o uso de archivos locales en `Entrada/`, modo seguro (*Dry Run* para inyectar sin guardar vs. Producción), y alerta emergente (*Popup* configurable).
+  - Parámetros avanzados de tiempo en panel colapsable: Tiempos de descarga, carga, portapapeles, intervalo del ciclo periódico, tiempo de asentamiento de verificación en ServiceNow (30s por defecto) y espera de cierre de navegador (10s por defecto).
+  - Botón de detención inmediata (`⏹ Detener Proceso`) con confirmación segura para abortar tareas o ciclos en segundo plano.
+- **Controlador Web Desatendido con Cierre Garantizado (`RPA_ServiceNow_DOM_Web.py`)**:
+  - Componente especializado para invocación desatendida mediante subprocesos y CLI (`--action`, `--download`, `--dry-run`, `--interval-mins`, etc.), preservando intacto el orquestador de consola interactiva (`RPA_ServiceNow_DOM_E2E.py`).
+  - Bloques `try ... finally` con cierre garantizado de Microsoft Edge (`Alt+F4`), asegurando que ninguna ventana quede abierta ante excepciones, fallos de descarga de red o cancelaciones manuales.
+- **Dashboard Ejecutivo y Alertas de Salud Dinámicas**:
+  - Tarjetas superiores de KPIs enfocadas exclusivamente en la **ejecución activa** o log seleccionado (Reintentos destacados en ámbar `#d97706`, Alertas y Errores Críticos limpios en verde al no haber incidentes).
+  - Banner superior inteligente: Notifica en verde durante ejecuciones saludables, pasa a rojo palpitante ante fallas de ciclo (ej. expiración de sesión en ServiceNow o descargas fallidas) con motivo legible y botón de reintento directo, y muestra estado neutral y ordenado (`⏹ Proceso Detenido`) al finalizar a petición del usuario sin generar falsos positivos.
+- **Control General de Estabilidad y Salud Histórica**:
+  - Nuevo panel analítico inferior alimentado por `Salida/resumen_ejecuciones.csv`.
+  - **KPIs Acumulados**: Total de errores históricos, advertencias detectadas, reintentos de verificación y tasa de disponibilidad/éxito global.
+  - **Gráfica Cronológica Canvas Multiserie (`healthHistoryChart`)**: Representación de barras agrupadas por ciclo (rojo para errores, ámbar para advertencias, azul para reintentos y puntos verdes de ciclos 100% limpios y exitosos).
+  - **Tabla de Auditoría Desplegable**: Detalle cronológico inverso de ejecuciones con estado (*EXITOSO*, *ADVERTENCIA*, *ERROR*), duración, tickets procesados, motivo de falla y botón interactivo `Ver Log` para cargar cualquier traza directamente en el visor de logs.
+- **Persistencia Inmediata por Ciclo y Auto-Sincronización de Logs**:
+  - En el ciclo periódico (Opción 6), cada iteración se asienta de inmediato en `resumen_ejecuciones.csv` antes de iniciar el reposo de 30 minutos, evitando pérdida de trazabilidad si el usuario detiene el proceso durante la espera.
+  - El backend (`app.py`) auto-sincroniza en tiempo real cualquier archivo `.log` recién generado en `Salida/` que no haya sido registrado previamente.
+- **Gestión de Personal, Especialidades y Turnos**:
+  - Alta/baja de integrantes, activación/desactivación de recepción de tickets (`Estado = 1/0`), creación y modificación de grupos de Incidentes y Requerimientos.
+  - Programación semanal de turnos de guardia sincronizada con `Especificaciones/Turnos.csv`.
 
 ---
 
@@ -336,6 +356,7 @@ Aplica reglas automáticas para derivar incidentes específicos al personal en g
 - `Salida/incidentes_con_asignacion_{timestamp}.csv` - Incidentes clasificados con asignaciones y sys_id.
 - `Salida/requerimientos_con_asignacion_{timestamp}.csv` - Requerimientos clasificados con estado 'En proceso', fecha prevista de resolución e información de CMDB.
 - `Salida/reporte_detalle_asignaciones.csv` - Reporte acumulativo histórico de detalles de asignación.
+- `Salida/resumen_ejecuciones.csv` - Registro estructurado y métricas consolidadas de auditoría por cada ejecución (estado, reintentos, errores y tiempos).
 - `Salida/resumen_asignaciones_{timestamp}.txt` - Resumen y estadísticas de distribución final de carga.
 - `Salida/ejecucion_{prefix}_{timestamp}.log` - Logs detallados por cada ciclo de ejecución.
 

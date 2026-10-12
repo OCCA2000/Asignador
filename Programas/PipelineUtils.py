@@ -1,3 +1,4 @@
+import csv
 import glob
 import os
 import re
@@ -737,7 +738,7 @@ class ExecutionLogger:
     """
     Gestor de logs por ejecución.
     Archiva logs previos en base_dir hacia base_dir/YYYY-MM-DD/, abre un nuevo archivo de log
-    con marca de tiempo y captura stdout y stderr.
+    con marca de tiempo, captura stdout/stderr y genera un resumen en 'Salida/resumen_ejecuciones.csv'.
     """
     def __init__(self, base_dir: str = "Salida", prefix: str = "ejecucion", archive_logs: bool = True):
         self.base_dir = base_dir
@@ -745,6 +746,7 @@ class ExecutionLogger:
         self.archive_logs = archive_logs
         self.log_file = None
         self.log_path = None
+        self.start_time = None
         self._orig_stdout = None
         self._orig_stderr = None
 
@@ -752,6 +754,7 @@ class ExecutionLogger:
         if self.archive_logs:
             archive_previous_files(self.base_dir, "*.log")
         
+        self.start_time = time.time()
         now = datetime.now()
         timing = now.strftime('%Y-%m-%d_%H-%M-%S')
         os.makedirs(self.base_dir, exist_ok=True)
@@ -768,7 +771,8 @@ class ExecutionLogger:
         print(f"Archivo de log en: {self.log_path}\n")
         return self.log_path
 
-    def stop(self):
+    def stop(self, exc_occurred: bool = False, exc_msg: str = ""):
+        duration = round(time.time() - self.start_time, 2) if self.start_time else 0.0
         if self._orig_stdout:
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f"\n=== FIN DE EJECUCIÓN [{now_str}] ===")
@@ -779,16 +783,184 @@ class ExecutionLogger:
         if self.log_file and not self.log_file.closed:
             self.log_file.close()
 
+        # Registrar resumen en CSV de auditoría
+        try:
+            if self.log_path and os.path.exists(self.log_path):
+                stats = parse_log_summary(self.log_path)
+                stats["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                stats["tipo_ejecucion"] = self.prefix
+                stats["duracion_seg"] = duration
+                stats["archivo_log"] = os.path.basename(self.log_path)
+                if exc_occurred:
+                    stats["estado"] = "ERROR_CRITICO"
+                    if exc_msg and stats.get("motivo_error") == "Ninguno":
+                        stats["motivo_error"] = exc_msg[:120]
+                append_execution_summary(self.base_dir, stats)
+        except Exception as e:
+            if self._orig_stderr:
+                print(f"[ADVERTENCIA] No se pudo guardar resumen en CSV: {e}", file=self._orig_stderr)
+
     def __enter__(self):
         self.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
+        exc_occurred = exc_type is not None
+        exc_msg = str(exc_val) if exc_val else ""
+        if exc_occurred:
             print("\n[EXCEPCIÓN NO CONTROLADA CAPTURADA EN LOG]", file=sys.stderr)
             traceback.print_exception(exc_type, exc_val, exc_tb, file=sys.stderr)
-        self.stop()
+        self.stop(exc_occurred=exc_occurred, exc_msg=exc_msg)
         return False
+
+
+def parse_log_summary(log_path: str) -> dict:
+    """
+    Analiza un archivo de log y extrae métricas de resumen:
+    reintentos, advertencias, errores, tickets procesados, duración y estado.
+    """
+    if not os.path.exists(log_path):
+        return {
+            "estado": "DESCONOCIDO",
+            "duracion_seg": 0.0,
+            "tickets_procesados": 0,
+            "reintentos": 0,
+            "advertencias": 0,
+            "errores": 0,
+            "motivo_error": "Archivo no encontrado"
+        }
+
+    content = ""
+    for enc in ('utf-8-sig', 'utf-8', 'latin-1', 'cp1252'):
+        try:
+            with open(log_path, 'r', encoding=enc, errors='replace') as f:
+                content = f.read()
+            break
+        except Exception:
+            continue
+
+    lines = content.splitlines()
+    reintentos = 0
+    advertencias = 0
+    errores = 0
+    motivo_error = "Ninguno"
+    tickets_procesados = 0
+    is_critical = False
+
+    for line in lines:
+        # Reintentos de verificación o persistencia
+        if "[VERIFICACIÓN - Intento" in line:
+            m = re.search(r'Intento\s+(\d+)', line)
+            if m and int(m.group(1)) > 1:
+                reintentos += 1
+        elif "[ALERTA DE PERSISTENCIA" in line:
+            reintentos += 1
+
+        # Advertencias
+        if "[ADVERTENCIA]" in line or "ADVERTENCIA:" in line:
+            advertencias += 1
+            if motivo_error == "Ninguno":
+                motivo_error = line.strip()[:120]
+
+        # Errores y excepciones
+        if "[ERROR]" in line or "Traceback (most recent call last)" in line or "[EXCEPCIÓN" in line:
+            errores += 1
+            if motivo_error == "Ninguno" or "ADVERTENCIA" in motivo_error:
+                motivo_error = line.strip()[:120]
+        if "[DETENCIÓN CRÍTICA]" in line or "Se alcanzó el límite" in line:
+            is_critical = True
+            errores += 1
+            motivo_error = line.strip()[:120]
+
+        # Conteo de tickets
+        m_t = re.search(r'Found\s+(\d+)\s+tickets\s+with\s+predicted\s+assignments', line, re.I)
+        if m_t:
+            tickets_procesados += int(m_t.group(1))
+        m_t2 = re.search(r'Running\s+Assigner_.*\((\d+)\s+tickets\s+pendientes\)', line, re.I)
+        if m_t2 and tickets_procesados == 0:
+            tickets_procesados += int(m_t2.group(1))
+
+    if is_critical or errores > 0:
+        estado = "ERROR_CRITICO" if is_critical else "ERROR"
+    elif advertencias > 0:
+        estado = "ADVERTENCIA"
+    else:
+        estado = "EXITOSO"
+
+    return {
+        "estado": estado,
+        "tickets_procesados": tickets_procesados,
+        "reintentos": reintentos,
+        "advertencias": advertencias,
+        "errores": errores,
+        "motivo_error": motivo_error
+    }
+
+
+def append_execution_summary(base_dir: str, summary_data: dict) -> str:
+    """
+    Anexa una fila estructurada al archivo 'Salida/resumen_ejecuciones.csv'.
+    """
+    os.makedirs(base_dir, exist_ok=True)
+    summary_path = os.path.join(base_dir, "resumen_ejecuciones.csv")
+    headers = [
+        "timestamp", "tipo_ejecucion", "estado", "duracion_seg",
+        "tickets_procesados", "reintentos", "advertencias", "errores",
+        "motivo_error", "archivo_log"
+    ]
+    file_exists = os.path.exists(summary_path) and os.path.getsize(summary_path) > 0
+
+    with open(summary_path, 'a', encoding='utf-8-sig', newline='') as f:
+        writer = csv.writer(f, delimiter=';', lineterminator='\n')
+        if not file_exists:
+            writer.writerow(headers)
+        writer.writerow([
+            summary_data.get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            summary_data.get("tipo_ejecucion", "DESCONOCIDO"),
+            summary_data.get("estado", "EXITOSO"),
+            str(summary_data.get("duracion_seg", 0.0)),
+            str(summary_data.get("tickets_procesados", 0)),
+            str(summary_data.get("reintentos", 0)),
+            str(summary_data.get("advertencias", 0)),
+            str(summary_data.get("errores", 0)),
+            str(summary_data.get("motivo_error", "Ninguno")).replace(';', ','),
+            summary_data.get("archivo_log", "")
+        ])
+    return summary_path
+
+
+def ensure_execution_summary_csv(base_dir: str = "Salida") -> str:
+    """
+    Verifica si existe 'Salida/resumen_ejecuciones.csv'.
+    Si no existe o está vacío, analiza retroactivamente los archivos .log en Salida/ y lo genera.
+    """
+    summary_path = os.path.join(base_dir, "resumen_ejecuciones.csv")
+    if os.path.exists(summary_path) and os.path.getsize(summary_path) > 20:
+        return summary_path
+
+    log_files = []
+    for root, _, files in os.walk(base_dir):
+        for f in files:
+            if f.endswith('.log'):
+                full_p = os.path.join(root, f)
+                try:
+                    log_files.append((os.path.getmtime(full_p), full_p))
+                except OSError:
+                    pass
+    log_files.sort(key=lambda x: x[0])
+
+    for mtime, p in log_files:
+        stats = parse_log_summary(p)
+        dt = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+        rel_p = os.path.relpath(p, base_dir).replace('\\', '/')
+        tipo = "RPA_DOM" if "dom" in rel_p.lower() else "INFERENCIA" if "incidents" in rel_p.lower() or "requirements" in rel_p.lower() else "GENERAL"
+        stats["timestamp"] = dt
+        stats["tipo_ejecucion"] = tipo
+        stats["duracion_seg"] = 0.0
+        stats["archivo_log"] = rel_p
+        append_execution_summary(base_dir, stats)
+
+    return summary_path
 
 
 def generate_assignation_detail_report(df: pd.DataFrame, ticket_type: str, timing: str = None, base_dir: str = "Salida") -> str:

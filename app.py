@@ -1,10 +1,17 @@
 from pathlib import Path
+import collections
 import csv
 import io
 import os
 import re
+import subprocess
+import sys
+import threading
+import time
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
+
+from Programas.PipelineUtils import ensure_execution_summary_csv, append_execution_summary
 
 app = Flask(__name__)
 
@@ -19,8 +26,24 @@ INC_FILE = CONFIG_DIR / "Grupos - Incidentes(Grupos).csv"
 REQ_FILE = CONFIG_DIR / "Grupos - Requerimientos(Grupos).csv"
 SHIFTS_FILE = CONFIG_DIR / "Turnos.csv"
 REPORT_FILE = SALIDA_DIR / "reporte_detalle_asignaciones.csv"
+SUMMARY_FILE = SALIDA_DIR / "resumen_ejecuciones.csv"
 
 ROLES = ["Turno 1", "Turno 2", "Turno 3", "Turno 4", "Stand-by"]
+
+# Gestor de proceso en segundo plano para ejecución del pipeline
+pipeline_lock = threading.Lock()
+pipeline_process = None
+pipeline_state = {
+    "status": "idle",       # "idle", "running", "success", "error", "stopped"
+    "mode": None,           # "rpa_full", "ml_only"
+    "started_at": None,
+    "finished_at": None,
+    "duration_seconds": 0,
+    "pid": None,
+    "exit_code": None,
+    "error_message": "",
+    "log_file": ""
+}
 
 
 def read_csv_file(path: Path):
@@ -262,6 +285,373 @@ def build_daily_chart(ticket_type, user_display_map=None):
     }
 
 
+def read_execution_summaries():
+    ensure_execution_summary_csv(str(SALIDA_DIR))
+    if not SUMMARY_FILE.exists():
+        return []
+    rows = []
+    for enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+        try:
+            with SUMMARY_FILE.open("r", encoding=enc, newline="") as f:
+                reader = csv.DictReader(f, delimiter=DELIM)
+                for r in reader:
+                    cleaned = {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in r.items() if k}
+                    rows.append(cleaned)
+            break
+        except Exception:
+            continue
+
+    # Sincronizar automáticamente con archivos .log en Salida/ que no hayan sido asentados aún
+    registered_names = {Path(r.get("archivo_log", "")).name for r in rows if r.get("archivo_log")}
+    from Programas.PipelineUtils import parse_log_summary
+
+    for log_p in sorted(SALIDA_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime):
+        if log_p.name not in registered_names:
+            try:
+                stats = parse_log_summary(str(log_p))
+                mtime_str = datetime.fromtimestamp(log_p.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                entry = {
+                    "timestamp": mtime_str,
+                    "tipo_ejecucion": "RPA_DOM" if "dom" in log_p.name else "INFERENCIA",
+                    "estado": stats.get("estado", "EXITOSO"),
+                    "duracion_seg": "0.0",
+                    "tickets_procesados": str(stats.get("tickets_procesados", 0)),
+                    "reintentos": str(stats.get("reintentos", 0)),
+                    "advertencias": str(stats.get("advertencias", 0)),
+                    "errores": str(stats.get("errores", 0)),
+                    "motivo_error": stats.get("motivo_error", "Ninguno"),
+                    "archivo_log": log_p.name
+                }
+                append_execution_summary(str(SALIDA_DIR), entry)
+                rows.append(entry)
+                registered_names.add(log_p.name)
+            except Exception:
+                pass
+
+    return rows
+
+
+def get_system_health(summaries, log_text=""):
+    # 1. Analizar exhaustivamente el log actual en pantalla
+    log_errors = 0
+    log_warns = 0
+    log_retries = 0
+    log_cycle_retries = 0
+    log_down_reason = ""
+    is_periodic_waiting = False
+
+    if log_text:
+        err_matches = re.findall(r'(\[ERROR\]|\bRuntimeError:|\bTraceback \(most recent call last\):|\bFalla en la fase de descarga\b)', log_text, re.I)
+        log_errors = len(err_matches)
+
+        warn_matches = re.findall(r'(\[ADVERTENCIA\]|\bADVERTENCIA:|\bWarning:)', log_text, re.I)
+        log_warns = len(warn_matches)
+
+        # Reintentos en ServiceNow
+        snow_retries = re.findall(r'\[VERIFICACI[OÓ]N\s*-\s*Intento\s*(\d+)/(\d+)\]', log_text, re.I)
+        if snow_retries:
+            log_retries += max(max(int(m[0]) - 1 for m in snow_retries), 0)
+
+        # Reintentos consecutivos de ciclo periódico
+        cycle_retries = re.findall(r'Intentos fallidos consecutivos:\s*(\d+)\s*de\s*(\d+)', log_text, re.I)
+        if cycle_retries:
+            log_cycle_retries = int(cycle_retries[-1][0])
+            log_retries += log_cycle_retries
+
+        if "Siguiente ejecución a las" in log_text and "Esperando" in log_text:
+            is_periodic_waiting = True
+
+        # Extraer motivo legible del último error
+        err_candidates = [
+            line.strip() for line in log_text.splitlines()
+            if "[ERROR]" in line or "RuntimeError:" in line or "Falla en la fase de descarga" in line
+        ]
+        if err_candidates:
+            clean_err = err_candidates[-1]
+            clean_err = re.sub(r'^\[ERROR\]\s*(Ocurrió una excepción en el ciclo periódico:\s*)?', '', clean_err)
+            log_down_reason = clean_err[:240]
+
+    # 2. Analizar historial reciente
+    recent = summaries[-10:] if summaries else []
+    hist_retry_count = sum(int(r.get("reintentos", 0) or 0) for r in recent)
+    hist_warning_count = sum(int(r.get("advertencias", 0) or 0) for r in recent)
+    hist_error_count = sum(int(r.get("errores", 0) or 0) for r in recent)
+
+    total_retries = max(hist_retry_count, log_retries)
+    total_warnings = max(hist_warning_count, log_warns)
+    total_errors = max(hist_error_count, log_errors)
+
+    latest = summaries[-1] if summaries else {}
+    last_status = latest.get("estado", "EXITOSO").upper()
+    motivo = latest.get("motivo_error", "Ninguno")
+
+    with pipeline_lock:
+        pipe_status = pipeline_state.get("status", "idle")
+        is_running = (pipe_status == "running")
+        elapsed = 0
+        if pipeline_state.get("started_at"):
+            try:
+                st = datetime.strptime(pipeline_state["started_at"], "%Y-%m-%d %H:%M:%S")
+                elapsed = int((datetime.now() - st).total_seconds())
+            except Exception:
+                pass
+
+        if pipe_status == "error":
+            last_status = "ERROR_CRITICO"
+            motivo = pipeline_state.get("error_message") or motivo
+
+    # 3. Determinar métricas de la ejecución mostrada / activa
+    has_cycle_error = (log_errors > 0 or log_cycle_retries > 0)
+
+    # Las métricas en pantalla corresponden a la ejecución actual / log activo
+    if log_text:
+        active_retries = log_retries
+        active_warnings = log_warns
+        active_errors = log_errors
+    else:
+        active_retries = int(latest.get("reintentos", 0) or 0)
+        active_warnings = int(latest.get("advertencias", 0) or 0)
+        active_errors = int(latest.get("errores", 0) or 0)
+
+    if is_running:
+        if has_cycle_error:
+            is_down = True
+            down_reason = log_down_reason or "Error detectado en el ciclo actual"
+            last_status = "ERROR"
+        else:
+            is_down = False
+            down_reason = ""
+            last_status = "EJECUTANDO"
+    elif pipe_status == "stopped":
+        is_down = False
+        down_reason = ""
+        last_status = "DETENIDO"
+    else:
+        # En reposo o finalizado
+        if has_cycle_error and log_down_reason:
+            motivo = log_down_reason
+            last_status = "ERROR"
+        is_down = last_status in ("ERROR", "ERROR_CRITICO") or (motivo != "Ninguno" and "error" in motivo.lower())
+        down_reason = motivo if is_down else ""
+
+    return {
+        "is_running": is_running,
+        "is_down": is_down,
+        "cycle_error": has_cycle_error if is_running else False,
+        "cycle_consecutive_failures": log_cycle_retries,
+        "is_periodic_waiting": is_periodic_waiting,
+        "status": last_status,
+        "down_reason": down_reason,
+        "elapsed_seconds": elapsed,
+        "retry_count": active_retries,
+        "cycle_retries": log_cycle_retries,
+        "warning_count": active_warnings,
+        "error_count": active_errors,
+        "last_run_time": pipeline_state.get("started_at") if is_running else latest.get("timestamp", "Sin registro reciente"),
+        "last_log": latest.get("archivo_log", "")
+    }
+
+
+def build_performance_metrics(user_display_map=None):
+    if user_display_map is None:
+        user_display_map = {}
+    rows = read_report()
+    if not rows:
+        return {
+            "workload": [],
+            "models": [],
+            "top_groups": [],
+            "reassignments": {"total": 0, "reassigned": 0, "pct": 0.0}
+        }
+
+    user_counts = collections.Counter()
+    model_counts = collections.Counter()
+    group_counts = collections.Counter()
+    total_tickets = len(rows)
+    reassigned_count = 0
+
+    for r in rows:
+        person = (r.get("Person assigned") or "").strip()
+        if person:
+            user_counts[person] += 1
+
+        mtype = (r.get("Model type") or "").strip()
+        mname = (r.get("Model name") or "").strip()
+        if "hnlp" in mtype.lower() or "hnlp" in mname.lower():
+            model_label = "HNLP-MC (Multicanal Semisupervisado)"
+        elif "logistic" in mname.lower() or "tfidf" in mtype.lower() or mtype.lower() == "semisupervised":
+            model_label = "TF-IDF (Línea Base)"
+        elif "svm" in mname.lower() or "supervised" in mtype.lower():
+            model_label = "SVM (Supervisado)"
+        elif mtype:
+            model_label = mtype
+        else:
+            model_label = "Regla Operativa / Turno"
+        model_counts[model_label] += 1
+
+        group = (r.get("Predicted group") or "").strip()
+        if group:
+            group_counts[group] += 1
+
+        prev = (r.get("Previous person assigned") or "").strip()
+        if prev and prev.upper() != person.upper():
+            reassigned_count += 1
+
+    workload = [
+        {
+            "user": u,
+            "label": user_display_map.get(u.lower(), user_display_map.get(u.upper(), u)),
+            "count": cnt,
+            "pct": round((cnt / total_tickets) * 100, 1) if total_tickets else 0
+        }
+        for u, cnt in user_counts.most_common(10)
+    ]
+
+    models = [
+        {
+            "name": m,
+            "count": cnt,
+            "pct": round((cnt / total_tickets) * 100, 1) if total_tickets else 0
+        }
+        for m, cnt in model_counts.most_common(6)
+    ]
+
+    top_groups = [
+        {"group": g, "count": cnt}
+        for g, cnt in group_counts.most_common(8)
+    ]
+
+    reassignments = {
+        "total": total_tickets,
+        "reassigned": reassigned_count,
+        "pct": round((reassigned_count / total_tickets) * 100, 1) if total_tickets else 0.0
+    }
+
+    return {
+        "workload": workload,
+        "models": models,
+        "top_groups": top_groups,
+        "reassignments": reassignments
+    }
+
+
+def run_pipeline_worker(config):
+    global pipeline_process, pipeline_state
+    start_time = time.time()
+    st_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Normalizar acción recibida
+    action = str(config.get("action", config.get("mode", "6"))).strip()
+    if action == "rpa_full":
+        action = "5"
+    elif action == "ml_only":
+        action = "8"
+
+    download = bool(config.get("download", True))
+    dry_run = bool(config.get("dry_run", False))
+    show_popup = bool(config.get("show_popup", True))
+    popup_seconds = int(config.get("popup_seconds", 5))
+    download_wait = float(config.get("download_wait", 10.0))
+    load_time = float(config.get("load_time", 10.0))
+    clipboard_time = float(config.get("clipboard_time", 1.0))
+    interval_mins = float(config.get("interval_mins", 30.0))
+    verification_wait = float(config.get("verification_wait", 30.0))
+    close_browser_wait = float(config.get("close_browser_wait", 10.0))
+
+    with pipeline_lock:
+        pipeline_state["status"] = "running"
+        pipeline_state["mode"] = action
+        pipeline_state["started_at"] = st_str
+        pipeline_state["finished_at"] = None
+        pipeline_state["error_message"] = ""
+        pipeline_state["exit_code"] = None
+        pipeline_state["config"] = {
+            "action": action,
+            "download": download,
+            "dry_run": dry_run,
+            "show_popup": show_popup,
+            "popup_seconds": popup_seconds,
+            "download_wait": download_wait,
+            "load_time": load_time,
+            "clipboard_time": clipboard_time,
+            "interval_mins": interval_mins,
+            "verification_wait": verification_wait,
+            "close_browser_wait": close_browser_wait
+        }
+
+    try:
+        cmd = [
+            sys.executable,
+            str(ROOT_DIR / "RPA_ServiceNow_DOM_Web.py"),
+            "--action", action,
+            "--download" if download else "--skip-download",
+            "--dry-run" if dry_run else "--no-dry-run",
+            "--show-popup" if show_popup else "--no-popup",
+            "--popup-seconds", str(popup_seconds),
+            "--download-wait", str(download_wait),
+            "--load-time", str(load_time),
+            "--clipboard-time", str(clipboard_time),
+            "--interval-mins", str(interval_mins),
+            "--verification-wait", str(verification_wait),
+            "--close-browser-wait", str(close_browser_wait),
+        ]
+        env = {**os.environ}
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(ROOT_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env
+        )
+        with pipeline_lock:
+            pipeline_process = proc
+            pipeline_state["pid"] = proc.pid
+
+        stdout, _ = proc.communicate()
+        return_code = proc.returncode
+
+        duration = round(time.time() - start_time, 2)
+        with pipeline_lock:
+            pipeline_process = None
+            pipeline_state["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            pipeline_state["duration_seconds"] = duration
+            pipeline_state["exit_code"] = return_code
+            if pipeline_state["status"] != "stopped":
+                if return_code == 0:
+                    pipeline_state["status"] = "success"
+                else:
+                    pipeline_state["status"] = "error"
+                    pipeline_state["error_message"] = f"El proceso finalizó con código de error {return_code}"
+
+    except Exception as exc:
+        duration = round(time.time() - start_time, 2)
+        with pipeline_lock:
+            pipeline_process = None
+            pipeline_state["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            pipeline_state["duration_seconds"] = duration
+            pipeline_state["status"] = "error"
+            pipeline_state["error_message"] = str(exc)
+
+
+def stop_pipeline_process():
+    global pipeline_process, pipeline_state
+    with pipeline_lock:
+        if pipeline_process and pipeline_process.poll() is None:
+            try:
+                pipeline_process.terminate()
+                time.sleep(0.5)
+                if pipeline_process.poll() is None:
+                    pipeline_process.kill()
+            except Exception:
+                pass
+            pipeline_state["status"] = "stopped"
+            pipeline_state["error_message"] = "Proceso detenido manualmente por el usuario."
+            pipeline_process = None
+            return True
+    return False
+
+
 # ==============================================================================
 # Rutas y Endpoints
 # ==============================================================================
@@ -276,7 +666,6 @@ def dashboard():
     selected_log = request.args.get("log_file", "").strip()
     log_text, active_rel_path, available_logs, log_size = read_log_content(selected_log)
 
-    # Mapa de nombres reales para presentar usuarios en filtros
     _, users = user_rows()
     user_display_map = {
         u["usuario"].lower(): f"{u['nombre']} ({u['usuario']})"
@@ -290,6 +679,12 @@ def dashboard():
     incidentes_data = build_daily_chart("incidentes", user_display_map)
     requerimientos_data = build_daily_chart("requerimientos", user_display_map)
     pending_tickets = count_input_tickets()
+    summaries = read_execution_summaries()
+    health = get_system_health(summaries, log_text)
+    performance = build_performance_metrics(user_display_map)
+
+    with pipeline_lock:
+        current_pipeline = dict(pipeline_state)
 
     return jsonify(
         log=log_text,
@@ -298,8 +693,40 @@ def dashboard():
         available_logs=available_logs,
         incidentes=incidentes_data,
         requerimientos=requerimientos_data,
-        pendientes=pending_tickets
+        pendientes=pending_tickets,
+        health=health,
+        performance=performance,
+        pipeline=current_pipeline,
+        summaries=summaries[-35:] if summaries else []
     )
+
+
+@app.post("/api/pipeline/start")
+def pipeline_start():
+    d = request.get_json(silent=True) or {}
+    with pipeline_lock:
+        if pipeline_state["status"] == "running":
+            return jsonify(error="Ya existe una ejecución en progreso."), 409
+
+    t = threading.Thread(target=run_pipeline_worker, args=(d,), daemon=True)
+    t.start()
+
+    with pipeline_lock:
+        action = pipeline_state.get("mode", "5")
+        return jsonify(ok=True, message=f"Ejecución iniciada (Opción/Modo: {action}).", pipeline=dict(pipeline_state))
+
+
+@app.post("/api/pipeline/stop")
+def pipeline_stop():
+    stopped = stop_pipeline_process()
+    with pipeline_lock:
+        return jsonify(ok=True, stopped=stopped, pipeline=dict(pipeline_state))
+
+
+@app.get("/api/pipeline/status")
+def pipeline_status():
+    with pipeline_lock:
+        return jsonify(pipeline=dict(pipeline_state))
 
 
 @app.get("/api/state")
