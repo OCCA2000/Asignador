@@ -878,7 +878,7 @@ def update_week():
         return jsonify(error="Selecciona el lunes de la semana."), 400
 
     _, users = user_rows()
-    active = {u["usuario"] for u in users if u["estado"] == "1"}
+    known_users = {u["usuario"].lower() for u in users}
 
     headers, rows = read_shifts()
     date_col = "Fecha" if "Fecha" in headers else headers[0]
@@ -886,7 +886,8 @@ def update_week():
     for offset in range(7):
         day = monday + timedelta(days=offset)
         date_str = day.strftime("%d/%m/%Y")
-        row = next((r for r in rows if r.get(date_col, "") == date_str), None)
+        iso_str = day.strftime("%Y-%m-%d")
+        row = next((r for r in rows if r.get(date_col, "").strip() in (date_str, iso_str)), None)
         if row is None:
             row = {h: "" for h in headers}
             row[date_col] = date_str
@@ -896,8 +897,8 @@ def update_week():
             day_data = dias_payload[date_str]
             for role in ROLES:
                 val = day_data.get(role, "").strip()
-                if val and val not in active:
-                    return jsonify(error=f"'{val}' en {date_str} no está habilitado (Estado 0)."), 400
+                if val and val.lower() not in known_users:
+                    return jsonify(error=f"'{val}' en {date_str} no existe en Grupos - Usuarios."), 400
                 if role in headers:
                     row[role] = val
         else:
@@ -907,8 +908,8 @@ def update_week():
                 t2 = assignments.get("turno_2", assignments.get("Turno 2", "")).strip()
                 t3 = assignments.get("turno_3", assignments.get("Turno 3", "")).strip()
                 for val in [t1, t2, t3]:
-                    if val and val not in active:
-                        return jsonify(error=f"'{val}' no está habilitado (Estado 0)."), 400
+                    if val and val.lower() not in known_users:
+                        return jsonify(error=f"'{val}' no existe en Grupos - Usuarios."), 400
                 row["Turno 1"] = t1
                 row["Turno 2"] = t2
                 row["Turno 3"] = t3
@@ -918,8 +919,8 @@ def update_week():
                 t4 = assignments.get("sabado_turno_4", assignments.get("Turno 4", "")).strip()
                 sb = assignments.get("sabado_standby", assignments.get("Stand-by", "")).strip()
                 for val in [t4, sb]:
-                    if val and val not in active:
-                        return jsonify(error=f"'{val}' no está habilitado (Estado 0)."), 400
+                    if val and val.lower() not in known_users:
+                        return jsonify(error=f"'{val}' no existe en Grupos - Usuarios."), 400
                 row["Turno 1"] = ""
                 row["Turno 2"] = ""
                 row["Turno 3"] = ""
@@ -927,8 +928,8 @@ def update_week():
                 row["Stand-by"] = sb
             else:  # Domingo
                 sb = assignments.get("domingo_standby", assignments.get("Stand-by", "")).strip()
-                if sb and sb not in active:
-                    return jsonify(error=f"'{sb}' no está habilitado (Estado 0)."), 400
+                if sb and sb.lower() not in known_users:
+                    return jsonify(error=f"'{sb}' no existe en Grupos - Usuarios."), 400
                 row["Turno 1"] = ""
                 row["Turno 2"] = ""
                 row["Turno 3"] = ""
@@ -936,11 +937,13 @@ def update_week():
                 row["Stand-by"] = sb
 
     def parse_shift_date(r):
-        val = r.get(date_col, "")
-        try:
-            return datetime.strptime(val, "%d/%m/%Y")
-        except Exception:
-            return datetime.min
+        val = r.get(date_col, "").strip()
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(val, fmt)
+            except Exception:
+                pass
+        return datetime.min
 
     rows.sort(key=parse_shift_date)
     save_shifts(headers, rows)

@@ -1548,7 +1548,7 @@
 
         <div style="display:flex;gap:12px;align-items:center;">
           <button id="saveWeek" class="btn primary" style="padding:10px 22px;font-size:14px;">💾 Guardar turnos de la semana en Turnos.csv</button>
-          <span class="text-muted" style="font-size:12px;">Solo técnicos habilitados (Estado = 1)</span>
+          <span class="text-muted" style="font-size:12px;">Personal de guardia (técnicos activos y desactivados)</span>
         </div>
       </div>
 
@@ -1764,9 +1764,13 @@
     }
 
     function populateShiftSelects() {
-      const users = activeUsers().slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
+      const users = (state?.users || []).slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
       const optHtml = '<option value="">(Sin asignar / Vacío)</option>' +
-        users.map(u => `<option value="${esc(u.usuario)}">${esc(u.nombre)} · ${esc(u.usuario)}</option>`).join("");
+        users.map(u => {
+          const isEnabled = String(u.estado) === "1";
+          const tag = isEnabled ? "" : " (Desactivado)";
+          return `<option value="${esc(u.usuario)}">${esc(u.nombre)} · ${esc(u.usuario)}${tag}</option>`;
+        }).join("");
       ["shiftT1", "shiftT2", "shiftT3", "shiftSabT4", "shiftSabSB", "shiftDomSB"].forEach(id => {
         const el = $(id);
         if (el) {
@@ -1912,13 +1916,32 @@
       if (!monday) return;
       const rows = state?.turnos?.rows || [];
 
+      const findRow = (d) => {
+        const dStr = formatDateDMY(d);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const dIso = `${yyyy}-${mm}-${dd}`;
+        return rows.find(r => {
+          const f = (r["Fecha"] || "").trim();
+          return f === dStr || f === dIso;
+        });
+      };
+
+      const setSelectVal = (id, val) => {
+        const el = $(id);
+        if (!el) return;
+        if (!val) { el.value = ""; return; }
+        const match = Array.from(el.options).find(o => o.value.toLowerCase() === val.trim().toLowerCase());
+        el.value = match ? match.value : "";
+      };
+
       // Detectar modos de cada día según registros existentes en Turnos.csv
       weekDayModes = [];
       for (let offset = 0; offset < 7; offset++) {
         const d = new Date(monday);
         d.setDate(monday.getDate() + offset);
-        const dStr = formatDateDMY(d);
-        const r = rows.find(x => x["Fecha"] === dStr);
+        const r = findRow(d);
 
         if (r) {
           const hasT123 = !!(r["Turno 1"] || r["Turno 2"] || r["Turno 3"]);
@@ -1941,30 +1964,21 @@
         }
       }
 
-      const mondayStr = formatDateDMY(monday);
       const sabado = new Date(monday);
       sabado.setDate(monday.getDate() + 5);
-      const sabadoStr = formatDateDMY(sabado);
       const domingo = new Date(monday);
       domingo.setDate(monday.getDate() + 6);
-      const domingoStr = formatDateDMY(domingo);
 
-      const rowMon = rows.find(r => r["Fecha"] === mondayStr);
-      const rowSab = rows.find(r => r["Fecha"] === sabadoStr);
-      const rowDom = rows.find(r => r["Fecha"] === domingoStr);
+      const rowMon = findRow(monday);
+      const rowSab = findRow(sabado);
+      const rowDom = findRow(domingo);
 
-      if (rowMon) {
-        if ($("shiftT1")) $("shiftT1").value = rowMon["Turno 1"] || "";
-        if ($("shiftT2")) $("shiftT2").value = rowMon["Turno 2"] || "";
-        if ($("shiftT3")) $("shiftT3").value = rowMon["Turno 3"] || "";
-      }
-      if (rowSab) {
-        if ($("shiftSabT4")) $("shiftSabT4").value = rowSab["Turno 4"] || "";
-        if ($("shiftSabSB")) $("shiftSabSB").value = rowSab["Stand-by"] || "";
-      }
-      if (rowDom) {
-        if ($("shiftDomSB")) $("shiftDomSB").value = rowDom["Stand-by"] || "";
-      }
+      setSelectVal("shiftT1", rowMon ? rowMon["Turno 1"] : "");
+      setSelectVal("shiftT2", rowMon ? rowMon["Turno 2"] : "");
+      setSelectVal("shiftT3", rowMon ? rowMon["Turno 3"] : "");
+      setSelectVal("shiftSabT4", rowSab ? rowSab["Turno 4"] : "");
+      setSelectVal("shiftSabSB", rowSab ? rowSab["Stand-by"] : "");
+      setSelectVal("shiftDomSB", rowDom ? rowDom["Stand-by"] : "");
 
       renderShiftMosaic();
       renderWeekPreview();
