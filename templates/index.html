@@ -1112,10 +1112,18 @@
         </div>
 
         <div id="logContainerBody" style="display:none;margin-top:16px;">
-          <div class="log-toolbar" style="margin-bottom:10px;">
-            <div class="field" style="min-width:260px;flex:1;">
+          <div class="log-toolbar" style="margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div class="field" style="min-width:240px;flex:1;">
               <label for="logFileSelector" style="font-size:11px;color:var(--slate-600)">Archivo de Log:</label>
               <select id="logFileSelector" style="min-height:36px;padding:6px 10px;"></select>
+            </div>
+            <label style="font-size:12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--slate-700);user-select:none;background:#ffffff;padding:6px 10px;border-radius:6px;border:1px solid var(--slate-300);" title="Mantener la vista siempre en las últimas líneas del log">
+              <input type="checkbox" id="autoScrollLogToggle" checked>
+              <span>Auto-scroll (últimas líneas)</span>
+            </label>
+            <div style="display:inline-flex;gap:4px;">
+              <button id="scrollToTopBtn" class="btn" style="padding:6px 10px;font-size:12px;" title="Ir al inicio del log">⬆ Inicio</button>
+              <button id="scrollToBottomBtn" class="btn" style="padding:6px 10px;font-size:12px;" title="Ir al final del log">⬇ Final</button>
             </div>
             <span class="text-muted" id="logStatus" style="font-size:12px;margin-left:auto;">Cargando...</span>
             <button id="copyLogBtn" class="btn" style="padding:6px 10px;font-size:12px;">📋 Copiar log</button>
@@ -2299,13 +2307,26 @@
       }).join("");
     }
 
+    function scrollLogToBottom(smooth = false) {
+      const v = $("logViewer");
+      if (!v) return;
+      if (smooth) {
+        v.scrollTo({ top: v.scrollHeight, behavior: "smooth" });
+      } else {
+        v.scrollTop = v.scrollHeight;
+      }
+    }
+
     function loadLogIntoViewer(logPath) {
       if (!logPath) return;
       const sel = $("logFileSelector");
       if (sel) {
         sel.value = logPath;
         isManualLogSelection = true;
-        loadDashboard();
+        if ($("autoScrollLogToggle")) $("autoScrollLogToggle").checked = true;
+        loadDashboard().then(() => {
+          scrollLogToBottom();
+        });
         if ($("logContainerBody") && $("logContainerBody").style.display === "none") {
           $("toggleLogBtn")?.click();
         }
@@ -2636,7 +2657,20 @@
     function renderDashboard() {
       if (!dashboardData) return;
       const logText = dashboardData.log || "";
-      $("logViewer").textContent = logText || "No hay trazas registradas en el archivo.";
+      const viewer = $("logViewer");
+      const autoScrollToggle = $("autoScrollLogToggle");
+      const isAutoScroll = autoScrollToggle ? autoScrollToggle.checked : true;
+      const wasAtBottom = viewer ? ((viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight) <= 80) : true;
+
+      if (viewer) {
+        viewer.textContent = logText || "No hay trazas registradas en el archivo.";
+        if (isAutoScroll || wasAtBottom) {
+          requestAnimationFrame(() => {
+            viewer.scrollTop = viewer.scrollHeight;
+          });
+        }
+      }
+
       const warnings = (logText.match(/ADVERTENCIA/gi) || []).length;
       $("warningCount").textContent = "ADVERTENCIA: " + warnings;
       $("warningCount").className = "badge " + (warnings > 0 ? "warn" : "active");
@@ -2648,12 +2682,18 @@
 
       // Selector de logs
       const sel = $("logFileSelector");
-      const currentSelected = sel.value || dashboardData.active_log;
-      sel.innerHTML = (dashboardData.available_logs || []).map(l => `
-        <option value="${esc(l.rel_path)}" ${l.rel_path === dashboardData.active_log ? "selected" : ""}>
-          ${esc(l.rel_path)} (${(l.size_bytes / 1024).toFixed(1)} KB) - ${esc(l.fecha_modificacion)}
-        </option>
-      `).join("") || '<option value="">No hay logs disponibles</option>';
+      if (sel) {
+        const currentSelected = sel.value || dashboardData.active_log;
+        const newOptions = (dashboardData.available_logs || []).map(l => `
+          <option value="${esc(l.rel_path)}" ${l.rel_path === (currentSelected || dashboardData.active_log) ? "selected" : ""}>
+            ${esc(l.rel_path)} (${(l.size_bytes / 1024).toFixed(1)} KB) - ${esc(l.fecha_modificacion)}
+          </option>
+        `).join("") || '<option value="">No hay logs disponibles</option>';
+        if (sel.innerHTML !== newOptions) {
+          sel.innerHTML = newOptions;
+          if (currentSelected) sel.value = currentSelected;
+        }
+      }
 
       // Actualizar total histórico
       const totalInc = (dashboardData.incidentes?.registros || 0);
@@ -2869,11 +2909,15 @@
 
     $("refreshDashboard").addEventListener("click", () => {
       isManualLogSelection = false;
-      loadDashboard();
+      loadDashboard().then(() => scheduleAutoRefresh());
     });
     $("logFileSelector")?.addEventListener("change", () => {
       isManualLogSelection = true;
-      loadDashboard();
+      if ($("autoScrollLogToggle")) $("autoScrollLogToggle").checked = true;
+      loadDashboard().then(() => {
+        scrollLogToBottom();
+        scheduleAutoRefresh();
+      });
     });
 
     let isLogExpanded = false;
@@ -2881,6 +2925,48 @@
       isLogExpanded = !isLogExpanded;
       $("logContainerBody").style.display = isLogExpanded ? "block" : "none";
       $("toggleLogBtn").textContent = isLogExpanded ? "▼ Ocultar Trazas" : "▶ Desplegar Trazas (Logs)";
+      if (isLogExpanded) {
+        requestAnimationFrame(() => {
+          scrollLogToBottom();
+        });
+      }
+    });
+
+    // Control de interacción manual del usuario con el scroll del log
+    $("logViewer")?.addEventListener("scroll", () => {
+      const v = $("logViewer");
+      if (!v) return;
+      const isAtBottom = (v.scrollHeight - v.scrollTop - v.clientHeight) <= 80;
+      const toggle = $("autoScrollLogToggle");
+      if (toggle) {
+        if (isAtBottom && !toggle.checked) {
+          toggle.checked = true;
+        } else if (!isAtBottom && toggle.checked) {
+          // Desactivar temporalmente si el usuario subió intencionalmente a leer trazas previas
+          if ((v.scrollHeight - v.scrollTop - v.clientHeight) > 120) {
+            toggle.checked = false;
+          }
+        }
+      }
+    });
+
+    $("autoScrollLogToggle")?.addEventListener("change", e => {
+      if (e.target.checked) {
+        scrollLogToBottom(true);
+      }
+    });
+
+    $("scrollToBottomBtn")?.addEventListener("click", () => {
+      const toggle = $("autoScrollLogToggle");
+      if (toggle) toggle.checked = true;
+      scrollLogToBottom(true);
+    });
+
+    $("scrollToTopBtn")?.addEventListener("click", () => {
+      const toggle = $("autoScrollLogToggle");
+      if (toggle) toggle.checked = false;
+      const v = $("logViewer");
+      if (v) v.scrollTo({ top: 0, behavior: "smooth" });
     });
 
     let isHistoryTableOpen = false;
@@ -2980,6 +3066,23 @@
       };
     }
 
+    function scheduleAutoRefresh() {
+      if (autoRefreshTimer) {
+        clearTimeout(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      const isAuto = $("autoRefreshToggle") ? $("autoRefreshToggle").checked : true;
+      if (!isAuto) return;
+
+      const isRunning = (dashboardData?.pipeline?.status === "running");
+      const delay = isRunning ? 2000 : 5000;
+
+      autoRefreshTimer = setTimeout(async () => {
+        await loadDashboard();
+        scheduleAutoRefresh();
+      }, delay);
+    }
+
     $("btnStartPipeline")?.addEventListener("click", async () => {
       const payload = getPipelinePayload();
 
@@ -2993,7 +3096,13 @@
           method: "POST",
           body: JSON.stringify(payload)
         });
+        // Si el visor de logs estaba colapsado, desplegarlo automáticamente para ver la ejecución en vivo
+        if (!isLogExpanded && $("toggleLogBtn")) {
+          $("toggleLogBtn").click();
+        }
+        if ($("autoScrollLogToggle")) $("autoScrollLogToggle").checked = true;
         await loadDashboard();
+        scheduleAutoRefresh();
       } catch (e) {
         notice(e.message, "err");
       } finally {
@@ -3007,6 +3116,7 @@
         await api("/api/pipeline/stop", { method: "POST" });
         notice("Se solicitó la detención del proceso.");
         await loadDashboard();
+        scheduleAutoRefresh();
       } catch (e) {
         notice(e.message, "err");
       }
@@ -3027,7 +3137,12 @@
           method: "POST",
           body: JSON.stringify(payload)
         });
+        if (!isLogExpanded && $("toggleLogBtn")) {
+          $("toggleLogBtn").click();
+        }
+        if ($("autoScrollLogToggle")) $("autoScrollLogToggle").checked = true;
         await loadDashboard();
+        scheduleAutoRefresh();
       } catch (e) {
         notice(e.message, "err");
       }
@@ -3041,10 +3156,10 @@
 
     $("autoRefreshToggle").addEventListener("change", e => {
       if (e.target.checked) {
-        if (!autoRefreshTimer) autoRefreshTimer = setInterval(loadDashboard, 5000);
+        scheduleAutoRefresh();
       } else {
         if (autoRefreshTimer) {
-          clearInterval(autoRefreshTimer);
+          clearTimeout(autoRefreshTimer);
           autoRefreshTimer = null;
         }
       }
@@ -3087,8 +3202,9 @@
 
     // Carga inicial
     load();
-    loadDashboard();
-    autoRefreshTimer = setInterval(loadDashboard, 5000);
+    loadDashboard().then(() => {
+      scheduleAutoRefresh();
+    });
   </script>
 </body>
 </html>
