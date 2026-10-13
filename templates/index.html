@@ -1526,7 +1526,7 @@
               </h3>
               <span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px;">Turnos 1, 2 y 3: Vacíos</span>
             </div>
-            <p style="font-size:12px;color:var(--slate-600);margin-bottom:14px;">Asigna el personal de guardia para sábado y domingo:</p>
+            <p style="font-size:12px;color:var(--slate-600);margin-bottom:14px;">Asigna el personal de guardia para sábado y domingo. Los feriados en lunes y martes arrastran automáticamente la guardia del fin de semana previo:</p>
             
             <div style="display:flex;flex-direction:column;gap:12px;">
               <div class="field">
@@ -1827,8 +1827,176 @@
     }
 
     let weekDayModes = ["laborable", "laborable", "laborable", "laborable", "laborable", "feriado_t4_sb", "feriado_sb"];
+    let customStandByOverrides = {};
+
+    function findShiftRowByDate(d) {
+      if (!d) return null;
+      const dStr = formatDateDMY(d);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const dIso = `${yyyy}-${mm}-${dd}`;
+      const rows = state?.turnos?.rows || [];
+      return rows.find(r => {
+        const f = (r["Fecha"] || "").trim();
+        return f === dStr || f === dIso;
+      }) || null;
+    }
+
+    function resolveStandByForDay(offset, monday) {
+      if (!monday) return { value: "", inherited: false, source: "" };
+
+      // 0) Override manual puntual si existe
+      if (customStandByOverrides[offset]) {
+        return {
+          value: customStandByOverrides[offset],
+          inherited: false,
+          source: "Manual"
+        };
+      }
+
+      // 1) Domingo (offset 6)
+      if (offset === 6) {
+        return {
+          value: $("shiftDomSB")?.value || "",
+          inherited: false,
+          source: "Domingo"
+        };
+      }
+
+      // 2) Sábado (offset 5)
+      if (offset === 5) {
+        return {
+          value: $("shiftSabSB")?.value || "",
+          inherited: false,
+          source: "Sábado"
+        };
+      }
+
+      // 3) Fines de semana entrantes: Viernes (offset 4) o Jueves (offset 3)
+      if (offset === 4) {
+        const val = $("shiftSabSB")?.value || $("shiftDomSB")?.value || "";
+        return {
+          value: val,
+          inherited: !!val,
+          source: "Sábado entrante"
+        };
+      }
+      if (offset === 3 && (weekDayModes[4] === "feriado_sb" || weekDayModes[4] === "feriado_t4_sb")) {
+        const val = $("shiftSabSB")?.value || $("shiftDomSB")?.value || "";
+        return {
+          value: val,
+          inherited: !!val,
+          source: "Fin de semana entrante"
+        };
+      }
+
+      // 4) Lunes (offset 0): arrastre directo del domingo inmediatamente anterior (D-1)
+      if (offset === 0) {
+        const prevSun = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 1);
+        const rowSun = findShiftRowByDate(prevSun);
+        if (rowSun && rowSun["Stand-by"] && rowSun["Stand-by"].trim()) {
+          const sVal = rowSun["Stand-by"].trim();
+          return {
+            value: sVal,
+            inherited: true,
+            source: `Dom ${formatDateDMY(prevSun).slice(0, 5)}`
+          };
+        }
+        // Fallback: sábado previo (D-2)
+        const prevSat = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 2);
+        const rowSat = findShiftRowByDate(prevSat);
+        if (rowSat && rowSat["Stand-by"] && rowSat["Stand-by"].trim()) {
+          const sVal = rowSat["Stand-by"].trim();
+          return {
+            value: sVal,
+            inherited: true,
+            source: `Sáb ${formatDateDMY(prevSat).slice(0, 5)}`
+          };
+        }
+        // Fallback si la semana anterior aún no está guardada
+        const fallback = $("shiftSabSB")?.value || $("shiftDomSB")?.value || "";
+        return {
+          value: fallback,
+          inherited: false,
+          source: fallback ? "Fin de semana actual" : "Sin asignar"
+        };
+      }
+
+      // 5) Martes (offset 1): si lunes fue feriado de guardia, continúa con el mismo Stand-by
+      if (offset === 1) {
+        const modeMon = weekDayModes[0];
+        if (modeMon === "feriado_sb" || modeMon === "feriado_t4_sb") {
+          const resMon = resolveStandByForDay(0, monday);
+          if (resMon.value) {
+            return {
+              value: resMon.value,
+              inherited: true,
+              source: `Lunes (${resMon.source})`
+            };
+          }
+        }
+        // Si lunes no fue feriado, buscar domingo previo
+        const prevSun = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 1);
+        const rowSun = findShiftRowByDate(prevSun);
+        if (rowSun && rowSun["Stand-by"] && rowSun["Stand-by"].trim()) {
+          const sVal = rowSun["Stand-by"].trim();
+          return {
+            value: sVal,
+            inherited: true,
+            source: `Dom ${formatDateDMY(prevSun).slice(0, 5)}`
+          };
+        }
+        const fallback = $("shiftSabSB")?.value || $("shiftDomSB")?.value || "";
+        return {
+          value: fallback,
+          inherited: false,
+          source: fallback ? "Fin de semana actual" : "Sin asignar"
+        };
+      }
+
+      // 6) Miércoles (offset 2): si martes fue feriado continuo
+      if (offset === 2) {
+        const modeTue = weekDayModes[1];
+        if (modeTue === "feriado_sb" || modeTue === "feriado_t4_sb") {
+          const resTue = resolveStandByForDay(1, monday);
+          if (resTue.value) {
+            return {
+              value: resTue.value,
+              inherited: true,
+              source: `Martes feriado`
+            };
+          }
+        }
+      }
+
+      const fallback = $("shiftSabSB")?.value || $("shiftDomSB")?.value || "";
+      return {
+        value: fallback,
+        inherited: false,
+        source: "Fin de semana"
+      };
+    }
+
+    function promptOverrideStandBy(offset) {
+      const monday = getSelectedMondayDate();
+      const res = resolveStandByForDay(offset, monday);
+      const dayNames = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+      const current = res.value || "";
+      const val = prompt(`Asignar técnico de Stand-by para el ${dayNames[offset]} (deja vacío para restablecer el arrastre automático):`, current);
+      if (val === null) return;
+      const clean = val.trim();
+      if (!clean) {
+        delete customStandByOverrides[offset];
+      } else {
+        customStandByOverrides[offset] = clean;
+      }
+      renderShiftMosaic();
+      renderWeekPreview();
+    }
 
     function resetWeekMosaicToDefault() {
+      customStandByOverrides = {};
       weekDayModes = ["laborable", "laborable", "laborable", "laborable", "laborable", "feriado_t4_sb", "feriado_sb"];
       renderShiftMosaic();
       renderWeekPreview();
@@ -1842,10 +2010,26 @@
       const dayNames = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
       container.innerHTML = dayNames.map((dName, offset) => {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + offset);
+        const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset);
         const dStr = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
         const mode = weekDayModes[offset] || (offset < 5 ? "laborable" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
+
+        let autoInfo = "";
+        if (offset < 5 && (mode === "feriado_sb" || mode === "feriado_t4_sb")) {
+          const resSB = resolveStandByForDay(offset, monday);
+          if (resSB.value) {
+            const displayName = userName(resSB.value);
+            const shortName = displayName.split(" ")[0] || resSB.value;
+            const inhIcon = resSB.inherited ? "🔄 " : "🛡️ ";
+            autoInfo = `<div style="font-size:10px;margin-top:4px;padding:2px 5px;background:#ecfdf5;color:#065f46;border-radius:4px;border:1px solid #a7f3d0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="Stand-by arrastrado: ${esc(displayName)} (${esc(resSB.source)})">
+              ${inhIcon}${esc(shortName)}
+            </div>`;
+          } else {
+            autoInfo = `<div style="font-size:10px;margin-top:4px;padding:2px 4px;background:#fef2f2;color:#991b1b;border-radius:4px;border:1px solid #fecaca;" title="Sin registro previo en fin de semana">
+              ⚠️ SB pendiente
+            </div>`;
+          }
+        }
 
         return `
           <div class="mosaic-day-card mode-${mode}" id="mosaicCard_${offset}">
@@ -1856,6 +2040,7 @@
               <option value="feriado_t4_sb" ${mode === 'feriado_t4_sb' ? 'selected' : ''}>🛡️ (T4 + SB)</option>
               <option value="feriado_sb" ${mode === 'feriado_sb' ? 'selected' : ''}>🛡️ (SB)</option>
             </select>
+            ${autoInfo}
           </div>
         `;
       }).join("");
@@ -1863,10 +2048,7 @@
 
     function onMosaicModeChange(offset, newMode) {
       weekDayModes[offset] = newMode;
-      const card = $(`mosaicCard_${offset}`);
-      if (card) {
-        card.className = `mosaic-day-card mode-${newMode}`;
-      }
+      renderShiftMosaic();
       renderWeekPreview();
     }
 
@@ -1889,8 +2071,7 @@
       }
 
       const rowsHtml = dayNames.map((dName, offset) => {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + offset);
+        const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset);
         const dStr = formatDateDMY(d);
         const mode = weekDayModes[offset] || (offset < 5 ? "laborable" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
 
@@ -1912,12 +2093,33 @@
           modeBadge = '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:12px;margin-left:6px;" title="T4 + SB">🛡️</span>';
           rowBg = 'background:#fffdf5;';
           cellT4 = sabT4 ? `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(sabT4))}">${esc(sabT4)}</span>` : '<span style="color:var(--slate-400);">—</span>';
-          cellSB = sabSB ? `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(sabSB))}">${esc(sabSB)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+          
+          const resSB = resolveStandByForDay(offset, monday);
+          const effSB = resSB.value;
+          if (effSB) {
+            const inhBadge = resSB.inherited
+              ? `<span class="badge" style="background:#d1fae5;color:#065f46;font-size:10px;margin-left:4px;font-weight:600;" title="Arrastrado automáticamente de ${esc(resSB.source)}">🔄 Arrastrado (${esc(resSB.source)})</span>`
+              : '';
+            const editBtn = offset < 5 ? `<button type="button" onclick="promptOverrideStandBy(${offset})" style="border:none;background:none;cursor:pointer;font-size:11px;margin-left:4px;color:var(--slate-400);" title="Cambiar excepcionalmente">✏️</button>` : '';
+            cellSB = `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(effSB))}">${esc(effSB)}</span>${inhBadge}${editBtn}`;
+          } else {
+            cellSB = '<span style="color:var(--slate-400);">—</span>';
+          }
         } else if (mode === "feriado_sb") {
           modeBadge = '<span class="badge" style="background:#ffedd5;color:#c2410c;font-size:12px;margin-left:6px;" title="SB">🛡️</span>';
           rowBg = 'background:#fffaf0;';
-          const effSB = (offset === 6 ? domSB : (sabSB || domSB));
-          cellSB = effSB ? `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(effSB))}">${esc(effSB)}</span>` : '<span style="color:var(--slate-400);">—</span>';
+          
+          const resSB = resolveStandByForDay(offset, monday);
+          const effSB = resSB.value;
+          if (effSB) {
+            const inhBadge = resSB.inherited
+              ? `<span class="badge" style="background:#d1fae5;color:#065f46;font-size:10px;margin-left:4px;font-weight:600;" title="Arrastrado automáticamente de ${esc(resSB.source)}">🔄 Arrastrado (${esc(resSB.source)})</span>`
+              : '';
+            const editBtn = offset < 5 ? `<button type="button" onclick="promptOverrideStandBy(${offset})" style="border:none;background:none;cursor:pointer;font-size:11px;margin-left:4px;color:var(--slate-400);" title="Cambiar excepcionalmente">✏️</button>` : '';
+            cellSB = `<span class="badge" style="background:#fed7aa;color:#9a3412;" title="${esc(userName(effSB))}">${esc(effSB)}</span>${inhBadge}${editBtn}`;
+          } else {
+            cellSB = '<span style="color:var(--slate-400);">—</span>';
+          }
         } else {
           modeBadge = '<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:12px;margin-left:6px;" title="Libre">⛔</span>';
           rowBg = 'background:#f8fafc;';
@@ -1944,19 +2146,7 @@
     function syncWeekSelectorsFromState() {
       const monday = getSelectedMondayDate();
       if (!monday) return;
-      const rows = state?.turnos?.rows || [];
-
-      const findRow = (d) => {
-        const dStr = formatDateDMY(d);
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const dIso = `${yyyy}-${mm}-${dd}`;
-        return rows.find(r => {
-          const f = (r["Fecha"] || "").trim();
-          return f === dStr || f === dIso;
-        });
-      };
+      customStandByOverrides = {};
 
       const setSelectVal = (id, val) => {
         const el = $(id);
@@ -1969,9 +2159,8 @@
       // Detectar modos de cada día según registros existentes en Turnos.csv
       weekDayModes = [];
       for (let offset = 0; offset < 7; offset++) {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + offset);
-        const r = findRow(d);
+        const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset);
+        const r = findShiftRowByDate(d);
 
         if (r) {
           const hasT123 = !!(r["Turno 1"] || r["Turno 2"] || r["Turno 3"]);
@@ -1994,18 +2183,38 @@
         }
       }
 
-      const sabado = new Date(monday);
-      sabado.setDate(monday.getDate() + 5);
-      const domingo = new Date(monday);
-      domingo.setDate(monday.getDate() + 6);
+      // Si algún feriado entre semana ya tenía un Stand-by guardado en CSV diferente al resuelto, preservarlo
+      for (let offset = 0; offset < 5; offset++) {
+        const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset);
+        const r = findShiftRowByDate(d);
+        if (r && r["Stand-by"] && r["Stand-by"].trim()) {
+          const mode = weekDayModes[offset];
+          if (mode === "feriado_sb" || mode === "feriado_t4_sb") {
+            const autoRes = resolveStandByForDay(offset, monday);
+            if (autoRes.value && autoRes.value.toLowerCase() !== r["Stand-by"].trim().toLowerCase()) {
+              customStandByOverrides[offset] = r["Stand-by"].trim();
+            }
+          }
+        }
+      }
 
-      const rowMon = findRow(monday);
-      const rowSab = findRow(sabado);
-      const rowDom = findRow(domingo);
+      const sabado = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 5);
+      const domingo = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
 
-      setSelectVal("shiftT1", rowMon ? rowMon["Turno 1"] : "");
-      setSelectVal("shiftT2", rowMon ? rowMon["Turno 2"] : "");
-      setSelectVal("shiftT3", rowMon ? rowMon["Turno 3"] : "");
+      const rowMon = findShiftRowByDate(monday);
+      const rowSab = findShiftRowByDate(sabado);
+      const rowDom = findShiftRowByDate(domingo);
+
+      // Si lunes es feriado, buscar el primer día laborable de la semana para precargar Turnos 1, 2, 3
+      const rowLaborable = [0, 1, 2, 3, 4]
+        .map(off => findShiftRowByDate(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + off)))
+        .find(r => r && (r["Turno 1"] || r["Turno 2"] || r["Turno 3"]));
+
+      const rowT123 = rowLaborable || rowMon;
+
+      setSelectVal("shiftT1", rowT123 ? rowT123["Turno 1"] : "");
+      setSelectVal("shiftT2", rowT123 ? rowT123["Turno 2"] : "");
+      setSelectVal("shiftT3", rowT123 ? rowT123["Turno 3"] : "");
       setSelectVal("shiftSabT4", rowSab ? rowSab["Turno 4"] : "");
       setSelectVal("shiftSabSB", rowSab ? rowSab["Stand-by"] : "");
       setSelectVal("shiftDomSB", rowDom ? rowDom["Stand-by"] : "");
@@ -2892,20 +3101,22 @@
             "Stand-by": ""
           };
         } else if (mode === "feriado_t4_sb") {
+          const resSB = resolveStandByForDay(offset, monday);
           diasPayload[dStr] = {
             "Turno 1": "",
             "Turno 2": "",
             "Turno 3": "",
             "Turno 4": $("shiftSabT4")?.value || "",
-            "Stand-by": $("shiftSabSB")?.value || ""
+            "Stand-by": resSB.value || ""
           };
         } else if (mode === "feriado_sb") {
+          const resSB = resolveStandByForDay(offset, monday);
           diasPayload[dStr] = {
             "Turno 1": "",
             "Turno 2": "",
             "Turno 3": "",
             "Turno 4": "",
-            "Stand-by": (offset === 6 ? $("shiftDomSB")?.value : ($("shiftSabSB")?.value || $("shiftDomSB")?.value)) || ""
+            "Stand-by": resSB.value || ""
           };
         } else {
           diasPayload[dStr] = {

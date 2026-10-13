@@ -944,8 +944,8 @@ def update_week():
             row[date_col] = date_str
             rows.append(row)
 
-        if dias_payload and date_str in dias_payload:
-            day_data = dias_payload[date_str]
+        day_data = (dias_payload.get(date_str) or dias_payload.get(iso_str)) if dias_payload else None
+        if day_data:
             for role in ROLES:
                 val = day_data.get(role, "").strip()
                 if val and val.lower() not in known_users:
