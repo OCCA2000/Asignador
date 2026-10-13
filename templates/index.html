@@ -160,31 +160,45 @@
       margin-top: 4px;
     }
 
-    /* Notifications & Alert */
+    /* Floating Toast Notifications & Non-intrusive Alerts */
     .notice {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 99999;
+      max-width: 440px;
+      min-width: 300px;
       padding: 14px 18px;
-      border-radius: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 18px;
+      border-radius: 12px;
+      font-size: 13.5px;
+      font-weight: 600;
       display: none;
-      animation: fadeIn 0.3s ease;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.15);
+      pointer-events: auto;
+      transition: all 0.25s ease;
+      backdrop-filter: blur(8px);
     }
     .notice.ok {
-      display: block;
-      background: var(--success-light);
-      color: #065f46;
-      border: 1px solid #a7f3d0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #064e3b;
+      color: #ffffff;
+      border: 1px solid #059669;
+      animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
     .notice.err {
-      display: block;
-      background: var(--danger-light);
-      color: #991b1b;
-      border: 1px solid #fecaca;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #7f1d1d;
+      color: #ffffff;
+      border: 1px solid #dc2626;
+      animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-16px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     /* Tab Navigation */
@@ -1585,17 +1599,25 @@
 
     const $ = id => document.getElementById(id);
 
+    let noticeTimer = null;
     function notice(msg, type = "ok") {
       const n = $("notice");
-      n.textContent = msg;
+      if (!n) return;
+      const icon = type === "ok" ? "✅" : "⚠️";
+      n.innerHTML = `
+        <span style="font-size:16px;line-height:1;">${icon}</span>
+        <span style="flex:1;line-height:1.4;">${esc(msg)}</span>
+        <button type="button" onclick="$('notice').style.display='none'" style="background:transparent;border:none;color:#ffffff;font-size:16px;cursor:pointer;opacity:0.8;padding:0 4px;margin-left:6px;" title="Cerrar">✕</button>
+      `;
       n.className = "notice " + type;
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      setTimeout(() => {
-        if (n.className.includes("ok")) {
-          n.className = "notice";
-          n.textContent = "";
-        }
-      }, 5000);
+      n.style.display = "flex";
+
+      if (noticeTimer) clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => {
+        n.style.display = "none";
+        n.className = "notice";
+        n.textContent = "";
+      }, 4200);
     }
 
     async function api(url, opts = {}) {
@@ -1696,7 +1718,7 @@
             </span>
           </td>
           <td style="text-align:right;">
-            <button class="btn ${String(u.estado) === "1" ? "danger" : "primary"}" style="padding:4px 10px;font-size:12px;" onclick="toggleUser('${esc(u.usuario)}', ${String(u.estado) === "1" ? "0" : "1"})">
+            <button class="btn ${String(u.estado) === "1" ? "danger" : "primary"}" style="padding:4px 10px;font-size:12px;" onclick="toggleUser('${esc(u.usuario)}', ${String(u.estado) === "1" ? "0" : "1"}, this)">
               ${String(u.estado) === "1" ? "Desactivar" : "Activar"}
             </button>
             <button class="btn danger" style="padding:4px 10px;font-size:12px;" onclick="removeUser('${esc(u.usuario)}')">
@@ -1753,7 +1775,7 @@
             </div>
           </div>
           <div style="margin-top:8px;">
-            <button class="btn primary" style="width:100%;font-size:12px;" onclick="saveGroup('${kind}', '${esc(g.nombre)}', '${containerId}')">
+            <button class="btn primary" style="width:100%;font-size:12px;" onclick="saveGroup('${kind}', '${esc(g.nombre)}', '${containerId}', this)">
               💾 Guardar cambios de grupo
             </button>
           </div>
@@ -2738,14 +2760,16 @@
       }
     }
 
-    async function toggleUser(username, estado) {
+    async function toggleUser(username, estado, btn = null) {
+      if (btn) btn.disabled = true;
       try {
         await api("/api/users/" + encodeURIComponent(username), {
           method: "PATCH",
           body: JSON.stringify({ estado })
         });
         await load();
-        notice("Estado actualizado correctamente para " + username);
+        const estadoStr = estado === 1 ? "habilitado" : "deshabilitado";
+        notice(`Usuario "${username}" ${estadoStr} y guardado en archivo.`);
       } catch (e) {
         notice(e.message, "err");
       }
@@ -2762,7 +2786,7 @@
       }
     }
 
-    async function saveGroup(kind, name, containerId) {
+    async function saveGroup(kind, name, containerId, btn = null) {
       const container = $(containerId);
       let members = [];
       if (container) {
@@ -2773,15 +2797,19 @@
           members = Array.from(checkboxes).map(cb => cb.value);
         }
       }
+      const origText = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = "⏳ Guardando cambios..."; }
       try {
         await api(`/api/groups/${kind}/${encodeURIComponent(name)}`, {
           method: "PUT",
           body: JSON.stringify({ miembros: members })
         });
         await load();
-        notice(`Grupo "${name}" actualizado con éxito.`);
+        notice(`Grupo "${name}" guardado exitosamente en archivo.`);
       } catch (e) {
         notice(e.message, "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = origText; }
       }
     }
 
@@ -2890,15 +2918,20 @@
         }
       }
 
+      const btn = $("saveWeek");
+      const origText = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = "⏳ Guardando turnos..."; }
       try {
         const d = await api("/api/shifts/week", {
           method: "PUT",
           body: JSON.stringify({ fecha_inicio: date, dias: diasPayload })
         });
         await load();
-        notice(d.message || "Turnos semanales guardados.");
+        notice(d.message || "Turnos semanales guardados exitosamente en archivo.");
       } catch (e) {
         notice(e.message, "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = origText; }
       }
     });
 
