@@ -2,16 +2,24 @@
 
 Sistema automatizado de asignación y categorización de incidentes y requerimientos de TI utilizando Machine Learning (Supervisado, Semisupervisado y No Supervisado) y automatización RPA (Robotic Process Automation) para ServiceNow.
 
-## Overview
+## Descripción del Problema
 
-Este sistema utiliza modelos de Machine Learning avanzados para predecir la categoría de cada ticket y asignar automáticamente incidentes y requerimientos al personal adecuado basándose en su contenido textual, rol del solicitante, metadatos operacionales y balanceo de carga de trabajo. Además, incluye:
+En las mesas de ayuda de TI empresariales que operan bajo plataformas como ServiceNow, el proceso tradicional de triaje, categorización y asignación de tickets enfrenta problemáticas críticas:
+- **Tiempos de Respuesta Elevados (MTTR):** Cientos de incidentes y requerimientos ingresan diariamente. El triaje y enrutamiento manual produce demoras significativas antes de que un especialista técnico comience la resolución.
+- **Subjetividad e Inconsistencia en la Categorización Humana:** Diferentes analistas asignan categorías y prioridades dispares a incidentes con síntomas idénticos, deteriorando la calidad de los datos históricos y provocando reasignaciones continuas (*ticket ping-pong*).
+- **Dependencia de Especialistas y Fuga de Experiencia:** La identificación del asignatario idóneo recae habitualmente en el conocimiento empírico de coordinadores veteranos, sin reglas estandarizadas de decisión.
+- **Desbalanceo de Carga de Trabajo:** La falta de visibilidad en tiempo real de la carga acumulada genera sobrecarga en ciertos ingenieros y subutilización en otros.
+- **Complejidad en la Gestión de Turnos de Guardia:** La asignación debe respetar de manera estricta los turnos rotativos, guardias de fin de semana y asignaciones especializadas (Operación TI, Batch y Monitoreo).
+- **Corrupción de Codificación en Fuentes de Datos (Mojibake):** Los archivos exportados desde plataformas bancarias o ServiceNow combinan múltiples codificaciones (ANSI, Latin-1, UTF-8), corrompiendo caracteres con tildes o eñes y degradando los modelos NLP tradicionales.
 
-- **Arquitectura Híbrida Multicanal (HNLP-MC - Hybrid NLP Multi-Channel)**: Modelo semisupervisado de vanguardia que desacopla el texto libre, la semántica del cargo del solicitante y los metadatos institucionales/técnicos en canales de representación especializados procesados en paralelo mediante `ColumnTransformer`.
-- **Pipeline de Entrenamiento Científico en 3 Módulos**: Flujo metodológico estandarizado para Incidentes y Requerimientos con auditoría de fuga de datos (*Zero Data Leakage* vía `GroupShuffleSplit`), análisis de relevancia estadística ($V$ de Cramér), resolución de ambigüedades por regla mayoritaria y benchmarking multimodelo.
-- **Herramientas de RPA E2E (vía DOM DevTools y Coordenadas GUI)**: Interacción directa con ServiceNow en navegadores independientes para descarga, clasificación y actualización automatizada de tickets.
-- **Sistema de Registro y Logging de Ejecución (`ExecutionLogger`)**: Captura sincronizada de salidas de consola y archivado estructurado por fecha.
-- **Reporte Acumulativo de Auditoría (`reporte_detalle_asignaciones.csv`)**: Trazabilidad completa de asignaciones históricas, preservando el asignado previo original.
-- **Balanceo de Carga y Gestión de Turnos (`LoadBalancer`)**: Distribución equilibrada de tickets y enrutamiento por turnos de guardia según `Turnos.csv`.
+## Descripción de la Solución
+
+Este proyecto implementa una solución integral end-to-end que automatiza el 100% del ciclo de vida de clasificación, balanceo y asignación mediante Inteligencia Artificial y RPA:
+- **Arquitectura Híbrida Multicanal (HNLP-MC):** Modelo semisupervisado que procesa simultáneamente texto libre (síntomas/descripciones), semántica del rol del solicitante (`title`) y metadatos operativos (CMDB, subcategorías, empresa) vía `ColumnTransformer`, superando a los modelos tradicionales de solo texto (87.8% Accuracy en Requerimientos).
+- **Pipeline Científico con Cero Fuga de Información (*Zero Data Leakage*):** Partición estricta por grupos (`GroupShuffleSplit`), balanceo de clases minoritarias en entrenamiento (`RandomOverSampler`), y resolución de inconsistencias humanas por regla de mayoría.
+- **Motor Inteligente de Balanceo de Carga y Turnos (`LoadBalancer`):** Enrutamiento equitativo de tickets que consulta cuadrantes de guardia en tiempo real (`Turnos.csv`) y respeta roles de contingencia.
+- **Automatización RPA Desatendida E2E:** Agentes de automatización robótica (`RPA_ServiceNow_DOM_E2E.py` y `RPA_ServiceNow_DOM_Web.py`) que interactúan directamente con ServiceNow a través de la consola DevTools del navegador para descargar tickets y poblar/guardar asignaciones sin intervención humana.
+- **Panel Web de Monitoreo y Auditoría (`app.py` en Flask):** Dashboard gerencial para supervisión de ejecuciones en tiempo real, administración de turnos y personal, y trazabilidad histórica de asignaciones (`reporte_detalle_asignaciones.csv`).
 
 ---
 
@@ -122,6 +130,76 @@ Asignador/
 
 ---
 
+## Explicación General del Pipeline End-to-End
+
+El sistema opera bajo un pipeline modular e integrado que abarca desde la captura del dato crudo en ServiceNow hasta la ejecución robótica de la asignación y su auditoría continua. A continuación se presenta el flujo arquitectural de extremo a extremo:
+
+```mermaid
+flowchart TD
+    subgraph S1["1. Ingesta y Extracción de Datos"]
+        A1["ServiceNow (Plataforma TI)"] -->|"Descarga RPA / Exportación manual"| A2["Archivos CSV en Entrada/<br>(incident.csv / sc_req_item.csv)"]
+        A2 -->|"Copia histórica automática"| A3["Histórico en Entrada/YYYY-MM-DD/"]
+    end
+
+    subgraph S2["2. Preprocesamiento y Saneamiento Defensivo"]
+        A2 --> B1["Control Previo de Registros<br>(count_input_records / has_input_records)"]
+        B1 -->|"Si registros > 0"| B2["Saneamiento de Codificación<br>(PipelineUtils: clean_encoding_text / mojibake)"]
+        B2 --> B3["Normalización de Fechas y Saltos CSV"]
+    end
+
+    subgraph S3["3. Transformación Multicanal e Inferencia ML (HNLP-MC)"]
+        B3 --> C0["ColumnTransformer Híbrido"]
+        C0 --> C1["Canal 1: Texto Síntomas<br>TF-IDF unigram+bigram (5.000 feats)"]
+        C0 --> C2["Canal 2: Semántica Rol Solicitante<br>TF-IDF title/cargo (150 feats)"]
+        C0 --> C3["Canal 3: Metadatos Operativos<br>OneHotEncoder (CMDB, subcat, empresa)"]
+        C1 & C2 & C3 --> C4["Clasificador Lineal / SVM Calibrado<br>(pipeline_HNLP_MC.joblib)"]
+        C4 --> C5["Predicción de Categoría y Especialista Sugerido"]
+    end
+
+    subgraph S4["4. Reglas de Negocio, Turnos y Balanceo de Carga"]
+        C5 --> D1["LoadBalancer (Motor de Asignación)"]
+        D0["Especificaciones/Turnos.csv<br>& Grupos - Usuarios.csv"] --> D1
+        D1 --> D2["1. Validación de Turnos Especiales<br>(Monitoreo, Batch, Operación TI)"]
+        D1 --> D3["2. Verificación de Estado Activo<br>(Estado = 1)"]
+        D1 --> D4["3. Distribución Equitativa de Carga Activa"]
+        D2 & D3 & D4 --> D5["Asignación Definitiva del Ticket"]
+    end
+
+    subgraph S5["5. Despacho RPA, Auditoría y Monitoreo"]
+        D5 --> E1["Agente RPA E2E (DevTools DOM)<br>(RPA_ServiceNow_DOM_E2E.py)"]
+        E1 -->|"Inyección JS y Guardado"| A1
+        D5 --> E2["Consolidación en Salida/<br>(reporte_detalle_asignaciones.csv)"]
+        E2 --> E3["Métricas de Disponibilidad y Salud<br>(resumen_ejecuciones.csv)"]
+        E3 --> E4["Panel Web de Monitoreo en Vivo<br>(app.py - Flask / Dashboard)"]
+    end
+```
+
+### Fases Detalladas del Pipeline
+
+1. **Fase 1 - Ingesta y Extracción de Datos:**
+   Los incidentes y requerimientos pendientes de triaje se capturan desde ServiceNow mediante el agente RPA o se depositan directamente en `Entrada/` (`incident.csv` y `sc_req_item.csv`). Como salvaguarda de trazabilidad, el orquestador archiva automáticamente una réplica en `Entrada/YYYY-MM-DD/`.
+2. **Fase 2 - Preprocesamiento y Saneamiento Defensivo (`PipelineUtils.py`):**
+   - **Verificación de Carga:** Comprueba si los archivos entrantes contienen registros reales (`count_input_records`). Si están vacíos o solo tienen cabeceras, finaliza tempranamente sin instanciar modelos pesados en memoria.
+   - **Corrección de Mojibake:** Limpia y normaliza de forma idempotente secuencias corruptas de codificación (ANSI, Latin-1, UTF-8 multinivel) en descripciones y nombres (`clean_encoding_text`), preservando la integridad del vocabulario técnico.
+   - **Ajuste Regional:** Detecta y homologa los formatos de fecha corta según la configuración de Windows.
+3. **Fase 3 - Transformación Multicanal e Inferencia ML (HNLP-MC):**
+   Los datos procesados se introducen en el pipeline persistido de Scikit-Learn (`pipeline_HNLP_MC.joblib`). El `ColumnTransformer` procesa concurrentemente:
+   - *Canal 1 (Texto libre):* Representación TF-IDF unigramas y bigramas sobre `short_description` + `description`.
+   - *Canal 2 (Rol del solicitante):* Representación TF-IDF sobre el cargo institucional (`title`).
+   - *Canal 3 (Metadatos):* Codificación One-Hot de variables categóricas (empresa, subcategoría y aplicación de CMDB).
+   El clasificador infiere la categoría óptima y predice el especialista técnico sugerido.
+4. **Fase 4 - Reglas de Negocio, Turnos y Balanceo de Carga (`LoadBalancer.py`):**
+   La asignación predicha es auditada por el motor de reglas antes de ser definitiva:
+   - **Enrutamiento por Turno:** Si el incidente corresponde a *Monitoreo*, *Batch* u *Operación TI*, se asigna prioritariamente al analista en guardia de turno según `Especificaciones/Turnos.csv`.
+   - **Disponibilidad:** Se filtran analistas ausentes o inactivos (`Estado = 0`).
+   - **Equilibrio de Carga:** Entre los técnicos aptos, el ticket se asigna al especialista con menor volumen de tickets activos.
+5. **Fase 5 - Despacho RPA, Auditoría y Monitoreo:**
+   - **Actualización Desatendida en ServiceNow:** El agente `RPA_ServiceNow_DOM_E2E.py` o `RPA_ServiceNow_DOM_Web.py` abre una ventana de navegador independiente, inyecta el script de actualización en la consola DevTools y guarda los cambios en ServiceNow.
+   - **Registro Histórico Acumulativo:** Cada ticket procesado se asienta en `Salida/reporte_detalle_asignaciones.csv` conservando el usuario previo (`original_assigned_to`) y el nuevo (`predicted_assigned_to`).
+   - **Observabilidad en Tiempo Real:** Las métricas de salud, tasa de éxito, reintentos y logs quedan consolidados en `Salida/resumen_ejecuciones.csv` y se visualizan en vivo en el panel web `app.py`.
+
+---
+
 ## Metodología de Modelado Semisupervisado (HNLP-MC)
 
 El proyecto implementa un marco metodológico estandarizado y reproducible en tres etapas modulares:
@@ -153,32 +231,76 @@ Desacopla la información en tres canales en paralelo fusionados mediante `Colum
 
 ---
 
-## Installation
+## Requisitos Técnicos y Dependencias
 
-### Prerequisites
-- Python 3.8+ (en Windows invocado mediante `py`)
-- pandas
-- numpy
-- scipy
-- scikit-learn
-- imbalanced-learn
-- nltk
-- joblib
-- matplotlib / seaborn (para visualización en notebooks)
-- pyautogui / pyperclip (para RPA)
+### Requisitos del Sistema y Entorno
+- **Sistema Operativo:** Windows 10 / Windows 11 (los scripts y comandos de ejecución están optimizados para el lanzador estándar `py`).
+- **Python:** Versión 3.8 o superior (3.9 - 3.11 recomendada).
+- **Entorno Virtual Local:** Obligatorio para garantizar reproducibilidad y aislamiento de librerías (`venv` o `conda`).
+- **Navegador Web (para RPA E2E):** Microsoft Edge (prioritario) o Google Chrome con consola Developer Tools habilitada.
 
-### Setup
-1. Clonar el repositorio.
-2. Asegurar que el entorno virtual local esté activo y ejecutar:
+### Dependencias Principales ([requirements.txt](requirements.txt))
+- **Manipulación de Datos y Computación Científica:** `numpy>=1.21.0`, `pandas>=1.3.0`, `scipy>=1.7.0`
+- **Machine Learning, Modelado NLP y Balanceo:** `scikit-learn>=1.0.0`, `imbalanced-learn>=0.8.0`, `nltk>=3.6.0`, `joblib>=1.1.0`
+- **Análisis Exploratorio y Visualización:** `matplotlib>=3.4.0`, `seaborn>=0.11.0`
+- **Servidor Web y Monitoreo:** `Flask>=2.0.0`, `python-dateutil>=2.8.0`
+- **Automatización Robótica de Procesos (RPA):** `pyautogui>=0.9.50`, `pyperclip>=1.8.0`
+
+### Instalación Paso a Paso
+
+1. **Clonar el repositorio:**
    ```bash
-   pip install pandas numpy scipy scikit-learn imbalanced-learn nltk joblib matplotlib seaborn pyautogui pyperclip
+   git clone <URL_DEL_REPOSITORIO>
+   cd Asignador
+   ```
+
+2. **Crear y activar el entorno virtual local:**
+   ```powershell
+   py -m venv venv
+   .\venv\Scripts\activate
+   ```
+
+3. **Instalar todas las dependencias mediante el archivo consolidado:**
+   ```bash
+   pip install -r requirements.txt
    ```
 
 ---
 
-## Usage
+## Instrucciones de Ejecución Paso a Paso
 
-### 1. Ejecutar Asignación con Modelos ML Locales (Producción RPA)
+### 🚀 Guía de Inicio Rápido (Quickstart en 3 Pasos)
+
+Para evaluar y poner en marcha el sistema en menos de 2 minutos:
+
+1. **Paso 1: Activar el entorno e instalar dependencias**
+   ```powershell
+   .\venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+2. **Paso 2: Ejecutar la inferencia y balanceo sobre tickets entrantes**
+   Procesa los incidentes y requerimientos presentes en `Entrada/` aplicando la arquitectura semisupervisada multicanal (HNLP-MC) y la distribución por turnos de guardia:
+   ```bash
+   # Inferencia para Incidentes
+   py Assigner_Incidents.py
+
+   # Inferencia para Requerimientos
+   py Assigner_Requirements.py
+   ```
+   *(Los resultados asignados se depositan inmediatamente en `Salida/` y se consolidan en `Salida/reporte_detalle_asignaciones.csv`)*.
+
+3. **Paso 3: Iniciar el Panel Web de Monitoreo y Administración**
+   ```bash
+   py app.py
+   ```
+   Abre **http://127.0.0.1:5000** en tu navegador para interactuar con la consola de control, auditar el histórico de ejecuciones, gestionar técnicos y visualizar cuadrantes de turnos.
+
+---
+
+### Módulos y Flujos de Ejecución Específicos
+
+#### 1. Ejecutar Asignación con Modelos ML Locales (Producción RPA)
 Los programas principales ejecutan por defecto la arquitectura **HNLP-MC** sobre los tickets entrantes en `Entrada/`:
 
 ```bash
@@ -366,3 +488,4 @@ Aplica reglas automáticas para derivar incidentes específicos al personal en g
 
 Proyecto Integrador - Maestría en Inteligencia Artificial Aplicada.
 Sistema interno de automatización, clasificación y asignación inteligente de TI.
+

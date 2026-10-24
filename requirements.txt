@@ -1,0 +1,26 @@
+# ==============================================================================
+# Dependencias del Sistema Asignador - Proyecto Integrador MIAA
+# ==============================================================================
+
+# Computación Científica y Manipulación de Datos
+numpy>=1.21.0
+pandas>=1.3.0
+scipy>=1.7.0
+
+# Machine Learning, NLP y Balanceo de Clases
+scikit-learn>=1.0.0
+imbalanced-learn>=0.8.0
+nltk>=3.6.0
+joblib>=1.1.0
+
+# Visualización y Análisis Exploratorio de Datos
+matplotlib>=3.4.0
+seaborn>=0.11.0
+
+# Panel Web de Monitoreo y Administración
+Flask>=2.0.0
+python-dateutil>=2.8.0
+
+# Automatización Robótica de Procesos (RPA - GUI y Portapapeles)
+pyautogui>=0.9.50
+pyperclip>=1.8.0
