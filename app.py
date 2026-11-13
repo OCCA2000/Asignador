@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
 
-from Programas.PipelineUtils import ensure_execution_summary_csv, append_execution_summary
+from Programas.PipelineUtils import ensure_execution_summary_csv, append_execution_summary, get_windows_date_format
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -289,7 +289,9 @@ def read_report():
 
 def parse_timestamp(value):
     value = (value or "").strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y", "%Y/%m/%d %H:%M:%S"):
+    win_fmt = get_windows_date_format()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", f"{win_fmt} %H:%M:%S", win_fmt,
+                "%d/%m/%Y %H:%M:%S", "%d/%m/%Y", "%Y/%m/%d %H:%M:%S"):
         try:
             return datetime.strptime(value, fmt)
         except (ValueError, TypeError):
@@ -972,9 +974,10 @@ def update_week():
     headers, rows = read_shifts()
     date_col = "Fecha" if "Fecha" in headers else headers[0]
 
+    win_fmt = get_windows_date_format()
     for offset in range(7):
         day = monday + timedelta(days=offset)
-        date_str = day.strftime("%d/%m/%Y")
+        date_str = day.strftime(win_fmt)
         iso_str = day.strftime("%Y-%m-%d")
         row = next((r for r in rows if r.get(date_col, "").strip() in (date_str, iso_str)), None)
         if row is None:
@@ -1027,7 +1030,7 @@ def update_week():
 
     def parse_shift_date(r):
         val = r.get(date_col, "").strip()
-        for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        for fmt in (win_fmt, "%Y-%m-%d"):
             try:
                 return datetime.strptime(val, fmt)
             except Exception:
@@ -1036,7 +1039,7 @@ def update_week():
 
     rows.sort(key=parse_shift_date)
     save_shifts(headers, rows)
-    return jsonify(ok=True, message=f"Turnos guardados correctamente para la semana del {monday.strftime('%d/%m/%Y')}.")
+    return jsonify(ok=True, message=f"Turnos guardados correctamente para la semana del {monday.strftime(win_fmt)}.")
 
 
 @app.get("/api/health")
