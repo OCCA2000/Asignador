@@ -1146,6 +1146,21 @@
         </div>
       </div>
 
+      <!-- Carga y estado del equipo (resumen_asignaciones_*.txt) -->
+      <div class="panel" id="panelTeamWorkload">
+        <div class="panel-header" style="margin-bottom:8px;">
+          <div>
+            <h2>👥 Carga y Estado del Equipo</h2>
+            <p class="panel-desc" id="teamWorkloadSource">Tickets activos por integrante.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="badge active" id="teamActiveCount">0 activos</span>
+            <span class="badge warn" id="teamInactiveCount">0 inactivos</span>
+          </div>
+        </div>
+        <div id="teamWorkloadBars"></div>
+      </div>
+
       <!-- 4. Análisis de Desempeño y Machine Learning (Parte Inferior) -->
       <div class="perf-grid">
         <!-- Balanceo de Carga por Técnico -->
@@ -2806,6 +2821,30 @@
       }
     }
 
+    function renderTeamWorkload(data) {
+      const box = $("teamWorkloadBars");
+      if (!box) return;
+      const members = (data && data.members) || [];
+      const max = Math.max(1, ...members.map(m => m.count));
+      const active = members.filter(m => m.active).length;
+      $("teamActiveCount").textContent = `${active} activos`;
+      $("teamInactiveCount").textContent = `${members.length - active} inactivos`;
+      $("teamWorkloadSource").textContent = data && data.source
+        ? `Fuente: ${data.source} · ${data.updated_at}`
+        : "Tickets activos por integrante.";
+      box.innerHTML = members.map(m => `
+        <div class="bar-row" style="${m.active ? "" : "opacity:.6;"}">
+          <div class="bar-row-info">
+            <span><strong>${esc(m.label)}</strong> ${m.active ? "" : '<span class="badge warn" style="font-size:10px;">Inactivo</span>'}</span>
+            <span>${m.count} tickets</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill ${m.active ? "" : "purple"}" style="width:${Math.max(3, Math.round(m.count / max * 100))}%;"></div>
+          </div>
+        </div>
+      `).join("") || '<p class="text-muted" style="font-size:12px;">Sin resumen de carga disponible en Salida/.</p>';
+    }
+
     function renderPerformance(perf) {
       if (!perf) return;
 
@@ -2934,6 +2973,7 @@
       // Renderizar salud, pipeline y analíticas
       renderHealthAndPipeline(dashboardData.health, dashboardData.pipeline, logText);
       renderPerformance(dashboardData.performance);
+      renderTeamWorkload(dashboardData.team_workload);
 
       populateFilter("incidentUserFilter", dashboardData.incidentes.user_options);
       populateFilter("requirementUserFilter", dashboardData.requerimientos.user_options);

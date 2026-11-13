@@ -588,6 +588,43 @@ def build_performance_metrics(user_display_map=None):
     }
 
 
+WORKLOAD_LINE_RE = re.compile(r"^(?P<name>.+?)\s{2,}(?P<count>\d+)\s+tickets(?P<inactive>\s+\[INACTIVE\])?\s*$")
+
+
+def read_team_workload():
+    """Lee la distribución de carga del resumen .txt más reciente que la contenga."""
+    candidates = []
+    for pattern in ("resumen_asignaciones_incidentes_*.txt", "resumen_asignaciones_requerimientos_*.txt"):
+        candidates.extend(SALIDA_DIR.glob(pattern))
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        marker = text.find("Total Workload Distribution")
+        if marker < 0:
+            continue
+        members = []
+        for line in text[marker:].splitlines()[1:]:
+            m = WORKLOAD_LINE_RE.match(line.strip())
+            if m:
+                members.append({
+                    "label": m.group("name").strip(),
+                    "count": int(m.group("count")),
+                    "active": m.group("inactive") is None,
+                })
+        if members:
+            members.sort(key=lambda x: x["count"], reverse=True)
+            return {
+                "members": members,
+                "source": path.name,
+                "updated_at": datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+    return {"members": [], "source": "", "updated_at": ""}
+
+
 def run_pipeline_worker(config):
     global pipeline_process, pipeline_state
     start_time = time.time()
@@ -749,6 +786,7 @@ def dashboard():
         pendientes=pending_tickets,
         health=health,
         performance=performance,
+        team_workload=read_team_workload(),
         pipeline=current_pipeline,
         summaries=summaries[-35:] if summaries else []
     )
