@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import re
+import json
 import unicodedata
 from datetime import datetime, timedelta
 from Programas.PipelineUtils import clean_csv_file, get_windows_date_format
@@ -16,7 +17,9 @@ def _normalize_text(text):
     return s
 
 class WorkloadBalancer:
-    def __init__(self, groups_path="Especificaciones/Grupos - Incidentes(Grupos).csv", users_path="Especificaciones/Grupos - Usuarios.csv", assigned_incidents="Especificaciones/assigned_incidents.csv", assigned_requirements="Especificaciones/assigned_requirements.csv", resolved_weight=0.5, resolved_days_window=7, shifts_path="Especificaciones/Turnos.csv"):
+    def __init__(self, groups_path="Especificaciones/Grupos - Incidentes(Grupos).csv", users_path="Especificaciones/Grupos - Usuarios.csv", assigned_incidents="Especificaciones/assigned_incidents.csv", assigned_requirements="Especificaciones/assigned_requirements.csv", resolved_weight=0.5,     resolved_days_window=7, shifts_path="Especificaciones/Turnos.csv", config_path="Especificaciones/rpa_config_parameters.json"):
+        self.config_path = config_path
+        self.reviewer_user = self._load_reviewer_user()
         self.groups_path = groups_path
         self.users_path = users_path
         self.assigned_incidents = assigned_incidents
@@ -40,6 +43,19 @@ class WorkloadBalancer:
         self._load_users()
         self._load_shifts()
         self._load_initial_workload()
+
+    def _load_reviewer_user(self):
+        """Lee el usuario revisor al que se asignan los tickets que no se pudieron enrutar."""
+        try:
+            with open(self.config_path, encoding='utf-8') as f:
+                return str(json.load(f).get("reviewer_user", "")).strip()
+        except Exception as e:
+            print(f"Warning: no se pudo leer 'reviewer_user' de {self.config_path}: {e}")
+            return ""
+
+    def _unrouted_assignee(self, marker):
+        """Devuelve el usuario revisor si está configurado; si no, conserva el marcador original."""
+        return self.reviewer_user or marker
 
     def _load_shifts(self):
         if not self.shifts_path or not os.path.exists(self.shifts_path):
@@ -433,8 +449,11 @@ class WorkloadBalancer:
         print(f"Aplicando balanceo de carga usando la columna: {available_cls_col}")
 
         new_assignees = []
-
+        review_reasons = []
+        unrouted = {}
+        reviewed = {}
         for idx, row in df.iterrows():
+            review_reasons.append("")
             category_val = str(row.get("category", "")).strip()
             subcategory_val = str(row.get("u_subcategory", "")).strip()
             contact_type_val = str(row.get("contact_type", "")).strip()
@@ -466,10 +485,20 @@ class WorkloadBalancer:
                     new_assignees.append("TURNO")
                 continue
             if pd.isna(classification_val) or str(classification_val).strip() == '':
-                new_assignees.append("SIN_CLASIFICACION")
+                unrouted["SIN_CLASIFICACION"] = unrouted.get("SIN_CLASIFICACION", 0) + 1
+                review_reasons[-1] = "SIN_CLASIFICACION"
+                new_assignees.append(self._unrouted_assignee("SIN_CLASIFICACION"))
                 continue
 
             norm_cls = _normalize_text(classification_val)
+
+            # "No aplica" (y variantes) va directo a la bandeja del revisor, sin balanceo
+            if self.reviewer_user and re.fullmatch(r'no[ _-]*aplica(ble)?', norm_cls):
+                reviewed["No aplica"] = reviewed.get("No aplica", 0) + 1
+                review_reasons[-1] = "NO_APLICA"
+                new_assignees.append(self.reviewer_user)
+                continue
+
             sing = _singularize_phrase(norm_cls)
 
             # 1) mapping directo desde classification_to_group
@@ -489,7 +518,9 @@ class WorkloadBalancer:
 
             if not macrogrupo:
                 # No se pudo mapear: marcar sin macrogrupo
-                new_assignees.append("SIN_ASIGNAR_SIN_GRUPO")
+                unrouted["SIN_ASIGNAR_SIN_GRUPO"] = unrouted.get("SIN_ASIGNAR_SIN_GRUPO", 0) + 1
+                review_reasons[-1] = "SIN_ASIGNAR_SIN_GRUPO"
+                new_assignees.append(self._unrouted_assignee("SIN_ASIGNAR_SIN_GRUPO"))
                 continue
 
             # Obtener candidatos por nombre de macrogrupo (las keys en group_members_l1 son UPPER)
@@ -501,7 +532,9 @@ class WorkloadBalancer:
             
             if not all_cands:
                 # Nadie configurado para este macrogrupo
-                new_assignees.append("SIN ASIGNAR (SIN MIEMBROS)") 
+                unrouted["SIN ASIGNAR (SIN MIEMBROS)"] = unrouted.get("SIN ASIGNAR (SIN MIEMBROS)", 0) + 1
+                review_reasons[-1] = "SIN_MIEMBROS"
+                new_assignees.append(self._unrouted_assignee("SIN ASIGNAR (SIN MIEMBROS)"))
                 continue
                 
             group_mean = sum(self._effective_workload(m) for m in all_cands) / len(all_cands)
@@ -540,5 +573,10 @@ class WorkloadBalancer:
             
         # Creamos/Sobreescribimos la columna de asignación final
         df[assigned_col] = new_assignees
+        df["motivo_revision"] = review_reasons
+        for reason, count in reviewed.items():
+            print(f"Tickets clasificados '{reason}': {count} -> asignados a '{self.reviewer_user}'")
+        for reason, count in unrouted.items():
+            print(f"Tickets sin ruta ({reason}): {count} -> asignados a '{self.reviewer_user or reason}'")
         
         return df
