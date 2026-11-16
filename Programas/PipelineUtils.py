@@ -291,6 +291,36 @@ def get_spanish_stopwords() -> set:
     return _SPANISH_STOPWORDS
 
 
+def add_prediction_confidence(df, model, X, predicted_labels=None):
+    """Agrega `confianza_prediccion` (0-1) y `tipo_confianza` al DataFrame.
+
+    Usa predict_proba si el modelo lo soporta (probabilidad calibrada); si no, aplica
+    softmax sobre decision_function (aproximación relativa, no calibrada).
+    Nunca interrumpe el flujo: ante cualquier error deja las columnas vacías.
+    """
+    import numpy as np
+    df["confianza_prediccion"] = np.nan
+    df["tipo_confianza"] = ""
+    try:
+        if hasattr(model, "predict_proba"):
+            scores = np.asarray(model.predict_proba(X))
+            conf = scores.max(axis=1)
+            kind = "probabilidad"
+        else:
+            scores = np.asarray(model.decision_function(X))
+            if scores.ndim == 1:
+                scores = np.column_stack([-scores, scores])
+            scores = scores - scores.max(axis=1, keepdims=True)
+            exp = np.exp(scores)
+            conf = (exp / exp.sum(axis=1, keepdims=True)).max(axis=1)
+            kind = "softmax_decision_function"
+        df["confianza_prediccion"] = np.round(conf, 4)
+        df["tipo_confianza"] = kind
+    except Exception as e:
+        print(f"Warning: no se pudo calcular la confianza de la predicción: {e}")
+    return df
+
+
 def clean_and_deidentify_text(text, remove_stopwords: bool = True) -> str:
     r"""
     Desidentificación y Normalización de Características Operacionales (Single Source of Truth):
@@ -1061,6 +1091,21 @@ def generate_assignation_detail_report(df: pd.DataFrame, ticket_type: str, timin
     report_df['Predicted end date'] = end_date_series.apply(format_date_val)
     report_df['Model type'] = df.get('prediction_model_type', pd.Series([""] * len(df))).apply(clean_empty)
     report_df['Model name'] = df.get('prediction_model_name', pd.Series([""] * len(df))).apply(clean_empty)
+    report_df['Prediction confidence'] = df.get('confianza_prediccion', pd.Series([""] * len(df))).apply(clean_empty)
+    report_df['Confidence type'] = df.get('tipo_confianza', pd.Series([""] * len(df))).apply(clean_empty)
+    report_df['Review reason'] = df.get('motivo_revision', pd.Series([""] * len(df))).apply(clean_empty)
+
+    # Si el reporte existente es anterior a las columnas nuevas, se migra agregándolas vacías
+    if os.path.exists(report_path) and os.path.getsize(report_path) > 0:
+        try:
+            existing = pd.read_csv(report_path, sep=';', dtype=str, encoding='utf-8-sig', keep_default_na=False)
+            missing = [c for c in report_df.columns if c not in existing.columns]
+            if missing:
+                for c in missing:
+                    existing[c] = ""
+                existing.to_csv(report_path, sep=';', index=False, encoding='utf-8-sig')
+        except Exception as e:
+            print(f"Warning: no se pudo migrar el encabezado de {report_path}: {e}")
 
     # Verificar si el archivo ya existe y tiene contenido
     file_exists = os.path.exists(report_path) and os.path.getsize(report_path) > 0

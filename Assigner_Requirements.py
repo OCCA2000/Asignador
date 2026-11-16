@@ -5,6 +5,7 @@ from Programas.PipelineUtils import (
     ExecutionLogger,
     generate_assignation_detail_report,
     clean_and_deidentify_text,
+    add_prediction_confidence,
     count_input_records,
     has_input_records,
 )
@@ -226,6 +227,7 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
             # Predicción
             X = vectorizer.transform(df_requirements['texto_limpio'])
             df_requirements['Clasificación'] = model.predict(X)
+            df_requirements = add_prediction_confidence(df_requirements, model, X)
             df_requirements["prediction_model_type"] = "supervised"
             df_requirements["prediction_model_name"] = "modelo_Requerimientos.joblib"
 
@@ -310,6 +312,7 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
                 df_canales['empresa'] = get_col('requested_for.company').replace('', 'DESCONOCIDO')
 
                 df_requirements['Clasificación'] = pipeline.predict(df_canales)
+                df_requirements = add_prediction_confidence(df_requirements, pipeline, df_canales)
                 df_requirements["prediction_model_type"] = "semisupervised_hnlp_mc"
                 df_requirements["prediction_model_name"] = "pipeline_HNLP_MC.joblib"
                 nombre_display = "HNLP-MC (Híbrido Multi-Canal - LinearSVC)"
@@ -337,6 +340,7 @@ def predict_requirement_assignments(df_requirements, balancer, model_type='super
 
                 X = vectorizer.transform(df_requirements['texto_unificado'])
                 df_requirements['Clasificación'] = model.predict(X)
+                df_requirements = add_prediction_confidence(df_requirements, model, X)
                 df_requirements["prediction_model_type"] = "semisupervised_tfidf"
                 df_requirements["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
                 nombre_display = "TF-IDF (Baseline - Logistic Regression)"
@@ -399,7 +403,8 @@ def generate_assignment_reports(df_requirements, timing, balancer=None):
 
     if "predicted_assigned_to" in df_requirements.columns:
         output_cols = [c for c in df_requirements.columns if not c.endswith('_norm')
-                       and c not in ('short_core', 'desc_core', 'texto_limpio', 'original_assigned_to')]
+                       and c not in ('short_core', 'desc_core', 'texto_limpio', 'original_assigned_to',
+                                     'confianza_prediccion', 'tipo_confianza')]
         df_requirements[output_cols].to_csv(output_path, sep=';', index=False, encoding='utf-8-sig')
         print(f"Requirement assignments saved to: {output_path}")
 

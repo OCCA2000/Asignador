@@ -4,6 +4,7 @@ from Programas.PipelineUtils import (
     ExecutionLogger,
     generate_assignation_detail_report,
     clean_and_deidentify_text,
+    add_prediction_confidence,
     count_input_records,
     has_input_records,
 )
@@ -55,6 +56,7 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
             X = df_incidents["text"].values
             predictions = pipeline.predict(X)
             predicted_assignees = label_encoder.inverse_transform(predictions)
+            df_incidents = add_prediction_confidence(df_incidents, pipeline, X)
             
             # Agregar predicciones al dataframe
             df_incidents["predicted_assigned_to"] = predicted_assignees
@@ -114,6 +116,7 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
                 df_canales['subcategoria'] = get_col('u_subcategory_2').replace('', 'DESCONOCIDO')
 
                 df_incidents['Clasificación'] = pipeline.predict(df_canales)
+                df_incidents = add_prediction_confidence(df_incidents, pipeline, df_canales)
                 df_incidents["prediction_model_type"] = "semisupervised_hnlp_mc"
                 df_incidents["prediction_model_name"] = "pipeline_HNLP_MC.joblib"
                 nombre_display = "HNLP-MC (Híbrido Multi-Canal - LinearSVC)"
@@ -140,6 +143,7 @@ def predict_incident_assignments(df_incidents, balancer, model_type='supervised'
 
                 X = vectorizer.transform(df_incidents['texto_unificado'])
                 df_incidents['Clasificación'] = model.predict(X)
+                df_incidents = add_prediction_confidence(df_incidents, model, X)
                 df_incidents["prediction_model_type"] = "semisupervised_tfidf"
                 df_incidents["prediction_model_name"] = "modelo_Logistic_Regression.joblib"
                 nombre_display = "Logistic Regression (TF-IDF Baseline)"
@@ -215,7 +219,7 @@ def generate_assignment_reports(df_incidents, timing, balancer=None):
     
     # Guardar predicciones de incidentes
     if "predicted_assigned_to" in df_incidents.columns:
-        df_incidents.to_csv(incident_output, sep=';', index=False, encoding='utf-8-sig')
+        df_incidents.drop(columns=['confianza_prediccion', 'tipo_confianza'], errors='ignore').to_csv(incident_output, sep=';', index=False, encoding='utf-8-sig')
         print(f"Incident assignments saved to: {incident_output}")
     
     # Generar reporte acumulativo consolidado
