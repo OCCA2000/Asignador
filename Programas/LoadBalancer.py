@@ -20,6 +20,9 @@ class WorkloadBalancer:
     def __init__(self, groups_path="Especificaciones/Grupos - Incidentes(Grupos).csv", users_path="Especificaciones/Grupos - Usuarios.csv", assigned_incidents="Especificaciones/assigned_incidents.csv", assigned_requirements="Especificaciones/assigned_requirements.csv", resolved_weight=0.5,     resolved_days_window=7, shifts_path="Especificaciones/Turnos.csv", config_path="Especificaciones/rpa_config_parameters.json"):
         self.config_path = config_path
         self.reviewer_user = self._load_reviewer_user()
+        if not self.reviewer_user:
+            print(f"[ADVERTENCIA] 'reviewer_user' no está configurado en {config_path}: "
+                  "los tickets que no se puedan enrutar quedarán sin asignatario.")
         self.groups_path = groups_path
         self.users_path = users_path
         self.assigned_incidents = assigned_incidents
@@ -577,6 +580,10 @@ class WorkloadBalancer:
         for reason, count in reviewed.items():
             print(f"Tickets clasificados '{reason}': {count} -> asignados a '{self.reviewer_user}'")
         for reason, count in unrouted.items():
-            print(f"Tickets sin ruta ({reason}): {count} -> asignados a '{self.reviewer_user or reason}'")
+            if self.reviewer_user:
+                print(f"Tickets sin ruta ({reason}): {count} -> asignados a '{self.reviewer_user}'")
+            else:
+                print(f"[ERROR] {count} ticket(s) sin ruta ({reason}) quedaron SIN asignatario porque "
+                      f"'reviewer_user' no está configurado en {self.config_path}.")
         
         return df

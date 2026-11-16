@@ -762,6 +762,9 @@ def update_tickets_in_servicenow_dom(csv_path_or_df, is_requirement=False):
             
         # Buscar ServiceNow ID
         sys_id = user_map.get(assignee.upper()) or user_map.get(assignee.lower(), "")
+        if not sys_id:
+            print(f"[ERROR] El asignatario '{assignee}' del ticket {ticket_id} no existe en el mapa de usuarios. Ticket omitido (no se guarda en ServiceNow).")
+            continue
         print(f"\n>>> Updating {ticket_id} -> Assignee: {assignee} (Sys_ID: '{sys_id}') (DRY_RUN={DRY_RUN})")
         
         due_date_str = ""
