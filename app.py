@@ -597,7 +597,22 @@ ASSIGNED_FILES = (
 CLOSED_STATES = {"Resuelto", "Cerrado"}
 
 
+_workload_cache = {"key": None, "value": None}
+_workload_cache_lock = threading.Lock()
+
+
 def read_team_workload():
+    """Devuelve la carga por integrante, recalculando solo si cambian los archivos de origen."""
+    watched = (*ASSIGNED_FILES, USERS_FILE, INC_FILE, SHIFTS_FILE)
+    key = tuple(p.stat().st_mtime_ns if p.exists() else None for p in watched)
+    with _workload_cache_lock:
+        if _workload_cache["key"] != key:
+            _workload_cache["value"] = _compute_team_workload()
+            _workload_cache["key"] = key
+        return _workload_cache["value"]
+
+
+def _compute_team_workload():
     """Calcula los tickets abiertos por integrante leyendo los CSV de tickets asignados."""
     import pandas as pd
     from Programas.LoadBalancer import WorkloadBalancer
