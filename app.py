@@ -590,41 +590,79 @@ def build_performance_metrics(user_display_map=None):
     }
 
 
-WORKLOAD_LINE_RE = re.compile(r"^(?P<name>.+?)\s{2,}(?P<count>\d+)\s+tickets(?P<inactive>\s+\[INACTIVE\])?\s*$")
+ASSIGNED_FILES = (
+    CONFIG_DIR / "assigned_incidents.csv",
+    CONFIG_DIR / "assigned_requirements.csv",
+)
+CLOSED_STATES = {"Resuelto", "Cerrado"}
 
 
 def read_team_workload():
-    """Lee la distribución de carga del resumen .txt más reciente que la contenga."""
-    candidates = []
-    for pattern in ("resumen_asignaciones_incidentes_*.txt", "resumen_asignaciones_requerimientos_*.txt"):
-        candidates.extend(SALIDA_DIR.glob(pattern))
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    """Calcula los tickets abiertos por integrante leyendo los CSV de tickets asignados."""
+    import pandas as pd
+    from Programas.LoadBalancer import WorkloadBalancer
 
-    for path in candidates:
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+    # Rutas vacías: solo se usa el balanceador para resolver nombres y estado activo
+    balancer = WorkloadBalancer(
+        groups_path=str(INC_FILE),
+        users_path=str(USERS_FILE),
+        assigned_incidents="",
+        assigned_requirements="",
+        shifts_path=str(SHIFTS_FILE),
+        config_path=str(CONFIG_DIR / "rpa_config_parameters.json"),
+    )
+
+    counts = {}
+    inc_counts = {}
+    req_counts = {}
+    for key in balancer.workload:
+        counts[key] = inc_counts[key] = req_counts[key] = 0
+    sources = []
+    latest_mtime = 0.0
+    for path, bucket in zip(ASSIGNED_FILES, (inc_counts, req_counts)):
+        if not path.exists():
             continue
-        marker = text.find("Total Workload Distribution")
-        if marker < 0:
+        df = None
+        for enc in ("utf-8-sig", "latin-1"):
+            try:
+                df = pd.read_csv(path, dtype=str, encoding=enc, on_bad_lines="skip")
+                break
+            except (UnicodeDecodeError, pd.errors.ParserError, OSError):
+                continue
+        if df is None or "assigned_to" not in df.columns:
             continue
-        members = []
-        for line in text[marker:].splitlines()[1:]:
-            m = WORKLOAD_LINE_RE.match(line.strip())
-            if m:
-                members.append({
-                    "label": m.group("name").strip(),
-                    "count": int(m.group("count")),
-                    "active": m.group("inactive") is None,
-                })
-        if members:
-            members.sort(key=lambda x: x["count"], reverse=True)
-            return {
-                "members": members,
-                "source": path.name,
-                "updated_at": datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-            }
-    return {"members": [], "source": "", "updated_at": ""}
+        if "state" in df.columns:
+            df = df[~df["state"].fillna("").str.strip().str.title().isin(CLOSED_STATES)]
+        for name in df["assigned_to"].dropna():
+            if not str(name).strip():
+                continue
+            key = balancer._canonical_assignee(name)
+            counts.setdefault(key, 0)
+            inc_counts.setdefault(key, 0)
+            req_counts.setdefault(key, 0)
+            bucket[key] += 1
+            counts[key] += 1
+        sources.append(path.name)
+        latest_mtime = max(latest_mtime, path.stat().st_mtime)
+
+    members = [
+        {
+            "label": balancer.display_name(key),
+            "count": count,
+            "incidents": inc_counts[key],
+            "requirements": req_counts[key],
+            "active": balancer.is_active(key),
+        }
+        for key, count in counts.items()
+    ]
+    members.sort(key=lambda x: x["count"], reverse=True)
+    if not sources:
+        return {"members": [], "source": "", "updated_at": ""}
+    return {
+        "members": members,
+        "source": " + ".join(sources),
+        "updated_at": datetime.fromtimestamp(latest_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+    }
 
 
 def run_pipeline_worker(config):
