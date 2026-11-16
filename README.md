@@ -81,8 +81,7 @@ Asignador/
 │   ├── PipelineUtils.py                    # Logging (ExecutionLogger), utilidades de pipeline, limpieza CSV y fecha regional OS
 │   ├── Trainer.py                          # Orquestador integral de entrenamiento ML (Supervisado, Semisupervisado y No supervisado)
 │   ├── LoadBalancer.py                     # Balanceador de carga de trabajo y lógica de turnos
-│   ├── GroupWorkloadReport.py              # Generador de reportes de carga de grupos
-│   └── GroupMapper.py                      # Mapeador de grupos primarios
+│   └── GroupWorkloadReport.py              # Generador de reportes de carga de grupos
 ├── Incidentes/                             # Modelos, notebooks, scripts y datos de incidentes
 │   ├── Datos/                          # IncidentesCategorizados_v2.csv, Incidentes_Preparados.csv, incidentes_depurado.csv
 │   ├── Entrenamiento/
