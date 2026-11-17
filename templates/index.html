@@ -3147,7 +3147,7 @@
         if (!r.ok) throw new Error(d.error || "No se pudo importar el Excel.");
         await load();
         const warns = (d.advertencias || []).length ? ` Advertencias: ${d.advertencias.join(" | ")}` : "";
-        notice(`Importado: ${d.dias_turnos} días de turnos, ${d.vacaciones} períodos de vacaciones, ${d.dias_induccion} días de inducción/soporte.${warns}`);
+        notice(`Importado ${d.desde} → ${d.hasta || "sin turnos"}: ${d.dias_turnos} días de turnos, ${d.vacaciones} períodos de vacaciones, ${d.dias_induccion} días de inducción/soporte.${warns}`);
       } catch (e) {
         notice(e.message, "err");
       } finally {

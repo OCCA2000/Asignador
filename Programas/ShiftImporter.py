@@ -215,7 +215,17 @@ def parse_workbook(xlsx_path, users_path, sheet=None):
             sorted(inducciones, key=lambda i: (i[1], i[0])), warnings)
 
 
+def _parse_shift_date(text):
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _read_existing_shifts(path):
+    """{fecha (date): {rol: usuario}}; las fechas con formato desconocido se descartan."""
     path = Path(path)
     if not path.exists():
         return {}
@@ -228,35 +238,55 @@ def _read_existing_shifts(path):
             continue
     existing = {}
     for r in rows:
-        fecha = (r.get("Fecha") or "").strip()
-        if fecha:
-            existing[fecha] = {role: (r.get(role) or "").strip() for role in ROLES}
+        d = _parse_shift_date((r.get("Fecha") or "").strip())
+        if d:
+            existing[d] = {role: (r.get(role) or "").strip() for role in ROLES}
     return existing
 
 
-def import_excel(xlsx_path, users_path, shifts_path, vacations_path, inductions_path, sheet=None):
-    """Genera Turnos.csv (conservando las fechas que el Excel no cubre), Vacaciones.csv y Apoyos_Turno.csv (inducciones y soportes; reemplazados)."""
+def import_excel(xlsx_path, users_path, shifts_path, vacations_path, inductions_path, sheet=None, today=None):
+    """Importa desde el inicio del mes en curso hasta el último día con alguien asignado.
+
+    Turnos.csv conserva el historial previo (sin los días vacíos posteriores al último turno asignado);
+    Vacaciones.csv y Apoyos_Turno.csv (inducciones y soportes) se reemplazan con lo vigente.
+    """
+    start = (today or date.today()).replace(day=1)
     turnos, vacaciones, inducciones, warnings = parse_workbook(xlsx_path, users_path, sheet)
 
+    assigned = [d for d, slot in turnos.items() if any(slot.values()) and d >= start]
+    last = max(assigned) if assigned else None
+    turnos = {d: slot for d, slot in turnos.items() if last and start <= d <= last}
+    vacaciones = [v for v in vacaciones if v[2] >= start]
+    inducciones = [i for i in inducciones if i[1] >= start]
+
     merged = _read_existing_shifts(shifts_path)
+    if last:
+        merged = {d: s for d, s in merged.items() if d <= last or any(s.values())}
     for d, slot in turnos.items():
-        merged[d.isoformat()] = {role: slot.get(role, "") for role in ROLES}
+        merged[d] = {role: slot.get(role, "") for role in ROLES}
 
     shifts_path, vacations_path = Path(shifts_path), Path(vacations_path)
     with shifts_path.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=DELIM, lineterminator="\n")
         w.writerow(["Fecha"] + ROLES)
-        for fecha in sorted(merged):
-            w.writerow([fecha] + [merged[fecha].get(role, "") for role in ROLES])
+        for d in sorted(merged):
+            w.writerow([d.isoformat()] + [merged[d].get(role, "") for role in ROLES])
     with vacations_path.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=DELIM, lineterminator="\n")
         w.writerow(["Usuario", "Desde", "Hasta"])
-        for username, start, end in vacaciones:
-            w.writerow([username, start.isoformat(), end.isoformat()])
+        for username, v_start, v_end in vacaciones:
+            w.writerow([username, v_start.isoformat(), v_end.isoformat()])
     with Path(inductions_path).open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=DELIM, lineterminator="\n")
         w.writerow(["Usuario", "Fecha"])
         for username, fecha in inducciones:
             w.writerow([username, fecha.isoformat()])
 
-    return {"dias_turnos": len(turnos), "vacaciones": len(vacaciones), "dias_induccion": len(inducciones), "advertencias": warnings}
+    return {
+        "dias_turnos": len(turnos),
+        "desde": start.isoformat(),
+        "hasta": last.isoformat() if last else None,
+        "vacaciones": len(vacaciones),
+        "dias_induccion": len(inducciones),
+        "advertencias": warnings,
+    }

@@ -435,6 +435,7 @@ El sistema deshabilita (`Estado = 0` en `Grupos - Usuarios.csv`) a quienes no de
 
 **Importación del Excel maestro** (`Programas/ShiftImporter.py`, endpoint `POST /api/shifts/import`)
 - Lee todas las hojas `TURNOS <año>` desde el año actual en adelante (p. ej. 2026 y 2027) y las combina; si una fecha está en dos hojas, prevalece la más reciente. No guarda el archivo subido.
+- Solo importa desde el primer día del mes en curso hasta el último día con alguien asignado; los días vacíos posteriores y las vacaciones, inducciones o soportes ya vencidos se descartan. Las fechas anteriores que ya estaban en `Turnos.csv` se conservan.
 - Reconstruye las fechas de la cabecera (algunas vienen como texto o con año erróneo) y empareja los nombres con `Grupos - Usuarios.csv` por palabras, sin importar tildes ni orden. Los nombres sin usuario se omiten y se informan como advertencia.
 - Los períodos de vacaciones se leen de las celdas combinadas con `VACACIONES`.
 - Se reconocen variantes con asterisco (`TURNO 3*`). Un segundo nombre en el mismo turno y día se trata como inducción.
