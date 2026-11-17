@@ -1805,7 +1805,19 @@
       const headers = state?.turnos?.headers || ["Fecha", ...roles];
       const rows = state?.turnos?.rows || [];
       $("shiftHead").innerHTML = "<tr>" + headers.map(h => `<th>${esc(h)}</th>`).join("") + "</tr>";
-      $("shiftBody").innerHTML = rows.slice().reverse().slice(0, 30).reverse().map(r => `
+      // Muestra desde la semana en curso en adelante (no los últimos 30 registros, que serían fechas futuras lejanas)
+      const toDate = (f) => {
+        f = (f || "").trim();
+        let m = f.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+        m = f.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null;
+      };
+      const now = new Date();
+      const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+      const firstIdx = rows.findIndex(r => { const d = toDate(r["Fecha"]); return d && d >= weekStart; });
+      const visible = firstIdx >= 0 ? rows.slice(firstIdx, firstIdx + 30) : rows.slice(-30);
+      $("shiftBody").innerHTML = visible.map(r => `
         <tr>${headers.map(h => `<td>${esc(r[h] || "—")}</td>`).join("")}</tr>
       `).join("") || `<tr><td colspan="${headers.length}" class="empty-state">No hay turnos registrados en Turnos.csv</td></tr>`;
     }
