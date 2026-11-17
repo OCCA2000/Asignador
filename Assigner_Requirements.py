@@ -20,6 +20,7 @@ import unicodedata
 import pandas as pd
 import joblib
 from Programas.LoadBalancer import WorkloadBalancer
+from Programas.AvailabilitySync import apply_availability_rules
 
 # ── Preprocessing pipeline (identical to Supervisado_Requerimientos.ipynb) ──────
 
@@ -493,6 +494,7 @@ def main():
         print("[CONTROL] No hay requerimientos para asignar (0 registros). Proceso finalizado sin ejecutar modelos.")
         return
 
+    apply_availability_rules()
     balancer = WorkloadBalancer(
         groups_path="Especificaciones/Grupos - Requerimientos(Grupos).csv",
         users_path="Especificaciones/Grupos - Usuarios.csv",

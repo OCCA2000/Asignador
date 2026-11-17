@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
 
 from Programas.PipelineUtils import ensure_execution_summary_csv, append_execution_summary, get_windows_date_format
+from Programas.AvailabilitySync import apply_availability_rules, forget_auto_disabled
+from Programas.ShiftImporter import import_excel
 
 app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -930,12 +932,30 @@ def update_user(username):
         return jsonify(error="Usuario no encontrado."), 404
     if "estado" in d:
         u["estado"] = "1" if str(d["estado"]) == "1" else "0"
+        forget_auto_disabled(u["usuario"], CONFIG_DIR)
     if "nombre" in d and str(d["nombre"]).strip():
         u["nombre"] = str(d["nombre"]).strip()
     if "snow_id" in d and str(d["snow_id"]).strip():
         u["snow_id"] = str(d["snow_id"]).strip()
     save_users(users)
     return jsonify(ok=True, user=u)
+
+
+@app.post("/api/shifts/import")
+def import_shifts():
+    f = request.files.get("file")
+    if not f or not f.filename.lower().endswith(".xlsx"):
+        return jsonify(error="Adjunta el Excel de turnos (.xlsx)."), 400
+    tmp = CONFIG_DIR / "_turnos_import.xlsx"
+    f.save(tmp)
+    try:
+        result = import_excel(tmp, USERS_FILE, SHIFTS_FILE, CONFIG_DIR / "Vacaciones.csv", CONFIG_DIR / "Apoyos_Turno.csv")
+    except Exception as exc:
+        return jsonify(error=f"No se pudo importar el Excel: {exc}"), 400
+    finally:
+        tmp.unlink(missing_ok=True)
+    apply_availability_rules(str(CONFIG_DIR))
+    return jsonify(ok=True, **result)
 
 
 @app.delete("/api/users/<username>")

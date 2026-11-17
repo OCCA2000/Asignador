@@ -13,6 +13,7 @@ import os
 import pandas as pd
 import joblib
 from Programas.LoadBalancer import WorkloadBalancer
+from Programas.AvailabilitySync import apply_availability_rules
 
 def predict_incident_assignments(df_incidents, balancer, model_type='supervised', architecture='hnlp_mc'):
     """Predice asignaciones de incidentes utilizando modelos entrenados"""
@@ -303,6 +304,7 @@ def main():
         print("[CONTROL] No hay incidentes para asignar (0 registros). Proceso finalizado sin ejecutar modelos.")
         return
         
+    apply_availability_rules()
     balancer = WorkloadBalancer()
     
     # Realizar predicciones (usando modelos entrenados)

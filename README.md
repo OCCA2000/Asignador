@@ -244,6 +244,7 @@ Desacopla la información en tres canales en paralelo fusionados mediante `Colum
 - **Análisis Exploratorio y Visualización:** `matplotlib>=3.4.0`, `seaborn>=0.11.0`
 - **Servidor Web y Monitoreo:** `Flask>=2.0.0`, `python-dateutil>=2.8.0`
 - **Automatización Robótica de Procesos (RPA):** `pyautogui>=0.9.50`, `pyperclip>=1.8.0`
+- **Importación de Turnos desde Excel:** `openpyxl>=3.1.5`
 
 ### Instalación Paso a Paso
 
@@ -417,6 +418,27 @@ Abre **http://127.0.0.1:5000** en el navegador.
 - **Gestión de Personal, Especialidades y Turnos**:
   - Alta/baja de integrantes, activación/desactivación de recepción de tickets (`Estado = 1/0`), creación y modificación de grupos de Incidentes y Requerimientos.
   - Programación semanal de turnos de guardia sincronizada con `Especificaciones/Turnos.csv`.
+  - **Carga del Excel maestro de turnos** (pestaña *🗓️ Turnos Semanales* → *📥 Cargar Excel de turnos*): genera `Turnos.csv`, `Vacaciones.csv` y `Apoyos_Turno.csv` y actualiza el estado de los usuarios.
+
+---
+
+## Disponibilidad Automática por Turnos, Inducciones y Vacaciones
+
+El sistema deshabilita (`Estado = 0` en `Grupos - Usuarios.csv`) a quienes no deben recibir tickets por su calendario, y los reactiva al terminar. Se aplica al iniciar `Assigner_Incidents.py` y `Assigner_Requirements.py`, y tras cada importación del Excel (`Programas/AvailabilitySync.py`).
+
+**Reglas**
+- **Turno 1, 2 y 3**, **inducción de turno** (`INDUCCION T1/T2/TURNO 3`) y **soporte de turno** (`SOPORTE TURNO n`): deshabilitado durante toda la semana calendario en que aplica (hasta el domingo).
+- **Turno 4 y Stand-by no deshabilitan.** Tampoco las inducciones o soportes de estados de cuenta (EC).
+- **Vacaciones**: deshabilitado hasta la fecha final del período.
+- **Anticipación**: quien inicia un turno, inducción, soporte o vacaciones deja de recibir tickets 3 días hábiles antes del inicio (inicio en lunes → deshabilitado desde el miércoles anterior). No se consideran feriados.
+- **Reactivación segura**: solo se reactivan los usuarios que el sistema deshabilitó (registrados en `Especificaciones/estado_automatico.json`). Los desactivados manualmente no se tocan, y cambiar el estado desde la interfaz lo marca como manual. Si se habilita a mano a alguien dentro de su ventana, se vuelve a deshabilitar en la siguiente ejecución.
+
+**Importación del Excel maestro** (`Programas/ShiftImporter.py`, endpoint `POST /api/shifts/import`)
+- Lee la hoja `TURNOS` del año más reciente; no guarda el archivo subido.
+- Reconstruye las fechas de la cabecera (algunas vienen como texto o con año erróneo) y empareja los nombres con `Grupos - Usuarios.csv` por palabras, sin importar tildes ni orden. Los nombres sin usuario se omiten y se informan como advertencia.
+- Los períodos de vacaciones se leen de las celdas combinadas con `VACACIONES`.
+- Se reconocen variantes con asterisco (`TURNO 3*`). Un segundo nombre en el mismo turno y día se trata como inducción.
+- `Turnos.csv` conserva las fechas que el Excel no cubre; `Vacaciones.csv` y `Apoyos_Turno.csv` se reemplazan por completo.
 
 ---
 
@@ -470,6 +492,9 @@ Aplica reglas automáticas para derivar incidentes específicos al personal en g
 - `Especificaciones/Grupos - Usuarios.csv` - Mapeo de nombres de usuario, usernames canónicos y ServiceNow IDs.
 - `Especificaciones/Grupos - Requerimientos(Grupos).csv` - Configuración de grupos para requerimientos.
 - `Especificaciones/Turnos.csv` - Cuadrante diario de turnos del equipo.
+- `Especificaciones/Vacaciones.csv` - Períodos de vacaciones (`Usuario;Desde;Hasta`), generado desde el Excel.
+- `Especificaciones/Apoyos_Turno.csv` - Días de inducción y soporte de turno (`Usuario;Fecha`), generado desde el Excel.
+- `Especificaciones/estado_automatico.json` - Usuarios deshabilitados automáticamente (para reactivarlos sin tocar los manuales).
 - `Especificaciones/rpa_config_parameters.json` - URLs de descarga y Sys IDs de configuración (ej. CMDB Bancs).
 - `Especificaciones/rpa_config_incidents.json` y `rpa_config_requirements.json` - Coordenadas para modo GUI tradicional.
 

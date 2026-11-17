@@ -1,0 +1,232 @@
+"""Convierte el Excel maestro de turnos en Turnos.csv y Vacaciones.csv."""
+import csv
+import re
+import unicodedata
+from collections import Counter
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import openpyxl
+
+DELIM = ";"
+ROLES = ["Turno 1", "Turno 2", "Turno 3", "Turno 4", "Stand-by"]
+FIRST_DATA_COL = 2
+HEADER_ROW = 2
+FIRST_DATA_ROW = 3
+
+_WEEKDAY_PREFIXES = (("lun", 0), ("mar", 1), ("mi", 2), ("jue", 3), ("vie", 4), ("s", 5), ("dom", 6))
+
+
+def _tokens(text):
+    s = unicodedata.normalize("NFKD", str(text).replace("\xa0", " "))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return set(re.findall(r"[a-z]+", s.lower()))
+
+
+def _read_users(users_path):
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            with open(users_path, encoding=enc, newline="") as f:
+                rows = list(csv.DictReader(f, delimiter=DELIM))
+            break
+        except UnicodeDecodeError:
+            continue
+    return [(r["Nombre"], r["Usuario"].strip().lower()) for r in rows if r.get("Nombre") and r.get("Usuario")]
+
+
+def _match_user(excel_name, users):
+    wanted = _tokens(excel_name)
+    if not wanted:
+        return None
+    exact = [u for n, u in users if _tokens(n) == wanted]
+    if len(exact) == 1:
+        return exact[0]
+    partial = [u for n, u in users if wanted <= _tokens(n)]
+    return partial[0] if len(partial) == 1 else None
+
+
+def _pick_sheet(wb, sheet):
+    if sheet:
+        return wb[sheet]
+    candidates = [n for n in wb.sheetnames if "turnos" in n.lower()]
+    if not candidates:
+        raise ValueError("El Excel no contiene una hoja de turnos (nombre con 'TURNOS').")
+    return wb[max(candidates, key=lambda n: int(re.search(r"\d{4}", n).group()) if re.search(r"\d{4}", n) else 0)]
+
+
+def _sheet_year(ws):
+    m = re.search(r"\d{4}", ws.title)
+    return int(m.group()) if m else date.today().year
+
+
+def _parse_header_date(value, year):
+    """Devuelve una fecha confiable de la cabecera o None si es dudosa."""
+    if isinstance(value, datetime):
+        return value.date() if year - 1 <= value.year <= year + 1 else None
+    if isinstance(value, str):
+        m = re.match(r"^\s*(\S+?)\W*,\s*(\d{1,2})-(\d{1,2})\s*$", value.replace("\xa0", " "))
+        if not m:
+            return None
+        prefix = unicodedata.normalize("NFKD", m.group(1).lower())[:3]
+        wd = next((n for p, n in _WEEKDAY_PREFIXES if prefix.startswith(p)), None)
+        for y in (year, year - 1, year + 1):
+            try:
+                d = date(y, int(m.group(3)), int(m.group(2)))
+            except ValueError:
+                continue
+            if wd is None or d.weekday() == wd:
+                return d
+    return None
+
+
+def _resolve_dates(ws, last_col, year, warnings):
+    """Reconstruye la fecha de cada columna; las cabeceras dudosas se interpolan desde la vecina confiable."""
+    trusted = {c: _parse_header_date(ws.cell(HEADER_ROW, c).value, year) for c in range(FIRST_DATA_COL, last_col + 1)}
+    trusted = {c: d for c, d in trusted.items() if d}
+    if not trusted:
+        raise ValueError("No se pudo interpretar ninguna fecha de la cabecera.")
+    # La fecha dominante (fecha - columna) descarta anclas aisladas con año o día equivocado
+    offsets = Counter((d - timedelta(days=c)) for c, d in trusted.items())
+    base, _ = offsets.most_common(1)[0]
+    dates = {}
+    for c in range(FIRST_DATA_COL, last_col + 1):
+        dates[c] = base + timedelta(days=c)
+        if c in trusted and trusted[c] != dates[c]:
+            warnings.append(f"Fecha de cabecera {trusted[c]} en columna {c} no encaja con la secuencia; se usa {dates[c]}.")
+    return dates
+
+
+def _last_header_col(ws):
+    last = FIRST_DATA_COL
+    for c in range(FIRST_DATA_COL, min(ws.max_column, 2000) + 1):
+        if ws.cell(HEADER_ROW, c).value not in (None, ""):
+            last = c
+    return last
+
+
+def _role_of(value):
+    text = re.sub(r"\s+", " ", str(value).replace("\xa0", " ").replace("*", " ")).strip().upper()
+    m = re.fullmatch(r"TURNO ?([1-4])", text)
+    if m:
+        return f"Turno {m.group(1)}"
+    if re.fullmatch(r"STAND ?-?BY", text):
+        return "Stand-by"
+    return None
+
+
+def _is_vacation(value):
+    return value is not None and "VACACION" in str(value).upper()
+
+
+def _is_induction(value):
+    """Inducción o soporte de turno (INDUCCION T1, SOPORTE TURNO 2...); los de estados de cuenta (EC) no cuentan."""
+    return value is not None and re.search(r"(INDUC\w*|SOPORTE)\s*(T|TURNO)\s*\d", str(value).upper()) is not None
+
+
+def parse_workbook(xlsx_path, users_path, sheet=None):
+    """Devuelve (turnos, vacaciones, inducciones, advertencias).
+    turnos: {fecha: {rol: usuario}}; vacaciones: [(usuario, desde, hasta)]; inducciones: [(usuario, fecha)]."""
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+    ws = _pick_sheet(wb, sheet)
+    year = _sheet_year(ws)
+    users = _read_users(users_path)
+    warnings = []
+
+    last_col = _last_header_col(ws)
+    dates = _resolve_dates(ws, last_col, year, warnings)
+
+    row_user = {}
+    unmapped = []
+    for r in range(FIRST_DATA_ROW, ws.max_row + 1):
+        name = ws.cell(r, 1).value
+        if not isinstance(name, str) or not name.strip():
+            continue
+        username = _match_user(name, users)
+        if username:
+            row_user[r] = username
+        else:
+            unmapped.append(name.replace("\xa0", " ").strip())
+    if unmapped:
+        warnings.append("Sin usuario en 'Grupos - Usuarios' (omitidos): " + ", ".join(unmapped))
+
+    turnos = {d: {} for d in dates.values()}
+    inducciones = set()
+    for r, username in row_user.items():
+        for c in range(FIRST_DATA_COL, last_col + 1):
+            value = ws.cell(r, c).value
+            if _is_induction(value):
+                inducciones.add((username, dates[c]))
+                continue
+            role = _role_of(value)
+            if not role:
+                continue
+            slot = turnos[dates[c]]
+            if slot.get(role) and slot[role] != username:
+                # Un segundo nombre en el mismo turno y día es un acompañante en inducción
+                inducciones.add((username, dates[c]))
+            else:
+                slot[role] = username
+
+    vacaciones = []
+    covered = set()
+    for rng in ws.merged_cells.ranges:
+        if rng.min_row not in row_user or not _is_vacation(ws.cell(rng.min_row, rng.min_col).value):
+            continue
+        lo, hi = max(rng.min_col, FIRST_DATA_COL), min(rng.max_col, last_col)
+        if lo > hi:
+            continue
+        vacaciones.append((row_user[rng.min_row], dates[lo], dates[hi]))
+        covered.add((rng.min_row, rng.min_col))
+    for r, username in row_user.items():
+        for c in range(FIRST_DATA_COL, last_col + 1):
+            if (r, c) not in covered and _is_vacation(ws.cell(r, c).value):
+                vacaciones.append((username, dates[c], dates[c]))
+    vacaciones.sort(key=lambda v: (v[1], v[0]))
+    return turnos, vacaciones, sorted(inducciones, key=lambda i: (i[1], i[0])), warnings
+
+
+def _read_existing_shifts(path):
+    path = Path(path)
+    if not path.exists():
+        return {}
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            with path.open(encoding=enc, newline="") as f:
+                rows = list(csv.DictReader(f, delimiter=DELIM))
+            break
+        except UnicodeDecodeError:
+            continue
+    existing = {}
+    for r in rows:
+        fecha = (r.get("Fecha") or "").strip()
+        if fecha:
+            existing[fecha] = {role: (r.get(role) or "").strip() for role in ROLES}
+    return existing
+
+
+def import_excel(xlsx_path, users_path, shifts_path, vacations_path, inductions_path, sheet=None):
+    """Genera Turnos.csv (conservando las fechas que el Excel no cubre), Vacaciones.csv y Apoyos_Turno.csv (inducciones y soportes; reemplazados)."""
+    turnos, vacaciones, inducciones, warnings = parse_workbook(xlsx_path, users_path, sheet)
+
+    merged = _read_existing_shifts(shifts_path)
+    for d, slot in turnos.items():
+        merged[d.isoformat()] = {role: slot.get(role, "") for role in ROLES}
+
+    shifts_path, vacations_path = Path(shifts_path), Path(vacations_path)
+    with shifts_path.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f, delimiter=DELIM, lineterminator="\n")
+        w.writerow(["Fecha"] + ROLES)
+        for fecha in sorted(merged):
+            w.writerow([fecha] + [merged[fecha].get(role, "") for role in ROLES])
+    with vacations_path.open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f, delimiter=DELIM, lineterminator="\n")
+        w.writerow(["Usuario", "Desde", "Hasta"])
+        for username, start, end in vacaciones:
+            w.writerow([username, start.isoformat(), end.isoformat()])
+    with Path(inductions_path).open("w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f, delimiter=DELIM, lineterminator="\n")
+        w.writerow(["Usuario", "Fecha"])
+        for username, fecha in inducciones:
+            w.writerow([username, fecha.isoformat()])
+
+    return {"dias_turnos": len(turnos), "vacaciones": len(vacaciones), "dias_induccion": len(inducciones), "advertencias": warnings}
