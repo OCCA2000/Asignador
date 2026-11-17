@@ -2170,7 +2170,13 @@
         if (!el) return;
         if (!val) { el.value = ""; return; }
         const match = Array.from(el.options).find(o => o.value.toLowerCase() === val.trim().toLowerCase());
-        el.value = match ? match.value : "";
+        if (match) { el.value = match.value; return; }
+        // Valor guardado que no está en la lista (p. ej. el revisor como reemplazo): se agrega para no perderlo al guardar
+        const opt = document.createElement("option");
+        opt.value = val.trim();
+        opt.textContent = val.trim();
+        el.appendChild(opt);
+        el.value = opt.value;
       };
 
       // Detectar modos de cada día según registros existentes en Turnos.csv
@@ -2191,7 +2197,8 @@
           } else if (hasSB) {
             weekDayModes.push("feriado_sb");
           } else if (!hasT123 && !hasT4 && !hasSB) {
-            weekDayModes.push("descanso");
+            // Un fin de semana vacío (sin Stand-by importado) sigue siendo de guardia para poder asignarlo
+            weekDayModes.push(offset < 5 ? "descanso" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
           } else {
             weekDayModes.push(offset < 5 ? "laborable" : (offset === 5 ? "feriado_t4_sb" : "feriado_sb"));
           }

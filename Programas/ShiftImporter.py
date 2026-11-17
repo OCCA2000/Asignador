@@ -131,7 +131,7 @@ def _is_induction(value):
     return value is not None and re.search(r"(INDUC\w*|SOPORTE)\s*(T|TURNO)\s*\d", str(value).upper()) is not None
 
 
-def _parse_sheet(ws, users):
+def _parse_sheet(ws, users, fallback=""):
     """Devuelve (turnos, vacaciones, inducciones, advertencias) de una hoja.
     turnos: {fecha: {rol: usuario}}; vacaciones: [(usuario, desde, hasta)]; inducciones: [(usuario, fecha)]."""
     year = _sheet_year(ws)
@@ -141,7 +141,7 @@ def _parse_sheet(ws, users):
     dates = _resolve_dates(ws, last_col, year, warnings)
 
     row_user = {}
-    unmapped = []
+    unmapped_rows = {}
     for r in range(FIRST_DATA_ROW, ws.max_row + 1):
         name = ws.cell(r, 1).value
         if not isinstance(name, str) or not name.strip():
@@ -150,9 +150,10 @@ def _parse_sheet(ws, users):
         if username:
             row_user[r] = username
         else:
-            unmapped.append(name.replace("\xa0", " ").strip())
-    if unmapped:
-        warnings.append(f"[{ws.title}] Sin usuario en 'Grupos - Usuarios' (omitidos): " + ", ".join(unmapped))
+            unmapped_rows[r] = name.replace("\xa0", " ").strip()
+    if unmapped_rows:
+        action = f"su turno se registra con el revisor '{fallback}'" if fallback else "omitidos"
+        warnings.append(f"[{ws.title}] Sin usuario en 'Grupos - Usuarios' ({action}): " + ", ".join(unmapped_rows.values()))
 
     turnos = {d: {} for d in dates.values()}
     inducciones = set()
@@ -181,6 +182,17 @@ def _parse_sheet(ws, users):
         if not turnos[fecha].get(role):
             turnos[fecha][role] = username
 
+    # Quien no tiene usuario deja su turno al revisor, sin pisar a quien sí lo cubre
+    if fallback:
+        for r in unmapped_rows:
+            for c in range(FIRST_DATA_COL, last_col + 1):
+                value = ws.cell(r, c).value
+                if _is_induction(value):
+                    continue
+                role = _role_of(value)
+                if role and not turnos[dates[c]].get(role):
+                    turnos[dates[c]][role] = fallback
+
     vacaciones = []
     covered = set()
     for rng in ws.merged_cells.ranges:
@@ -199,13 +211,13 @@ def _parse_sheet(ws, users):
     return turnos, vacaciones, sorted(inducciones, key=lambda i: (i[1], i[0])), warnings
 
 
-def parse_workbook(xlsx_path, users_path, sheet=None):
+def parse_workbook(xlsx_path, users_path, sheet=None, fallback=""):
     """Combina las hojas de turnos; si una fecha está en dos hojas, prevalece la hoja más reciente."""
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     users = _read_users(users_path)
     turnos, vacaciones, inducciones, warnings = {}, set(), set(), []
     for ws in _pick_sheets(wb, sheet):
-        t, v, i, w = _parse_sheet(ws, users)
+        t, v, i, w = _parse_sheet(ws, users, fallback)
         for d, slot in t.items():
             turnos.setdefault(d, {}).update(slot)
         vacaciones.update(v)
@@ -244,14 +256,14 @@ def _read_existing_shifts(path):
     return existing
 
 
-def import_excel(xlsx_path, users_path, shifts_path, vacations_path, inductions_path, sheet=None, today=None):
+def import_excel(xlsx_path, users_path, shifts_path, vacations_path, inductions_path, sheet=None, today=None, reviewer_user=""):
     """Importa desde el inicio del mes en curso hasta el último día con alguien asignado.
 
     Turnos.csv conserva el historial previo (sin los días vacíos posteriores al último turno asignado);
     Vacaciones.csv y Apoyos_Turno.csv (inducciones y soportes) se reemplazan con lo vigente.
     """
     start = (today or date.today()).replace(day=1)
-    turnos, vacaciones, inducciones, warnings = parse_workbook(xlsx_path, users_path, sheet)
+    turnos, vacaciones, inducciones, warnings = parse_workbook(xlsx_path, users_path, sheet, reviewer_user)
 
     assigned = [d for d, slot in turnos.items() if any(slot.values()) and d >= start]
     last = max(assigned) if assigned else None

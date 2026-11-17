@@ -2,6 +2,7 @@ from pathlib import Path
 import collections
 import csv
 import io
+import json
 import os
 import re
 import subprocess
@@ -941,6 +942,14 @@ def update_user(username):
     return jsonify(ok=True, user=u)
 
 
+def get_reviewer_user():
+    try:
+        with (CONFIG_DIR / "rpa_config_parameters.json").open(encoding="utf-8-sig") as fh:
+            return str(json.load(fh).get("reviewer_user", "")).strip()
+    except Exception:
+        return ""
+
+
 @app.post("/api/shifts/import")
 def import_shifts():
     f = request.files.get("file")
@@ -949,7 +958,8 @@ def import_shifts():
     tmp = CONFIG_DIR / "_turnos_import.xlsx"
     f.save(tmp)
     try:
-        result = import_excel(tmp, USERS_FILE, SHIFTS_FILE, CONFIG_DIR / "Vacaciones.csv", CONFIG_DIR / "Apoyos_Turno.csv")
+        result = import_excel(tmp, USERS_FILE, SHIFTS_FILE, CONFIG_DIR / "Vacaciones.csv", CONFIG_DIR / "Apoyos_Turno.csv",
+                              reviewer_user=get_reviewer_user())
     except Exception as exc:
         return jsonify(error=f"No se pudo importar el Excel: {exc}"), 400
     finally:
@@ -1043,6 +1053,8 @@ def update_week():
 
     _, users = user_rows()
     known_users = {u["usuario"].lower() for u in users}
+    if get_reviewer_user():
+        known_users.add(get_reviewer_user().lower())
 
     headers, rows = read_shifts()
     date_col = "Fecha" if "Fecha" in headers else headers[0]

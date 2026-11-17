@@ -475,7 +475,9 @@ class WorkloadBalancer:
                     new_assignees.append(shift_user)
                     self.workload[shift_user] = self.workload.get(shift_user, 0) + 1
                 else:
-                    new_assignees.append("TURNO")
+                    unrouted["TURNO_SIN_USUARIO"] = unrouted.get("TURNO_SIN_USUARIO", 0) + 1
+                    review_reasons[-1] = "TURNO_SIN_USUARIO"
+                    new_assignees.append(self._unrouted_assignee("TURNO"))
                 df.at[idx, available_cls_col] = "turno"
                 continue
                 
@@ -485,7 +487,9 @@ class WorkloadBalancer:
                     new_assignees.append(shift_user)
                     self.workload[shift_user] = self.workload.get(shift_user, 0) + 1
                 else:
-                    new_assignees.append("TURNO")
+                    unrouted["TURNO_SIN_USUARIO"] = unrouted.get("TURNO_SIN_USUARIO", 0) + 1
+                    review_reasons[-1] = "TURNO_SIN_USUARIO"
+                    new_assignees.append(self._unrouted_assignee("TURNO"))
                 continue
             if pd.isna(classification_val) or str(classification_val).strip() == '':
                 unrouted["SIN_CLASIFICACION"] = unrouted.get("SIN_CLASIFICACION", 0) + 1
