@@ -434,7 +434,7 @@ El sistema deshabilita (`Estado = 0` en `Grupos - Usuarios.csv`) a quienes no de
 - **Reactivación segura**: solo se reactivan los usuarios que el sistema deshabilitó (registrados en `Especificaciones/estado_automatico.json`). Los desactivados manualmente no se tocan, y cambiar el estado desde la interfaz lo marca como manual. Si se habilita a mano a alguien dentro de su ventana, se vuelve a deshabilitar en la siguiente ejecución.
 
 **Importación del Excel maestro** (`Programas/ShiftImporter.py`, endpoint `POST /api/shifts/import`)
-- Lee la hoja `TURNOS` del año más reciente; no guarda el archivo subido.
+- Lee todas las hojas `TURNOS <año>` desde el año actual en adelante (p. ej. 2026 y 2027) y las combina; si una fecha está en dos hojas, prevalece la más reciente. No guarda el archivo subido.
 - Reconstruye las fechas de la cabecera (algunas vienen como texto o con año erróneo) y empareja los nombres con `Grupos - Usuarios.csv` por palabras, sin importar tildes ni orden. Los nombres sin usuario se omiten y se informan como advertencia.
 - Los períodos de vacaciones se leen de las celdas combinadas con `VACACIONES`.
 - Se reconocen variantes con asterisco (`TURNO 3*`). Un segundo nombre en el mismo turno y día se trata como inducción.

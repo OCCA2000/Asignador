@@ -45,13 +45,21 @@ def _match_user(excel_name, users):
     return partial[0] if len(partial) == 1 else None
 
 
-def _pick_sheet(wb, sheet):
+def _pick_sheets(wb, sheet):
+    """Hojas a importar: la indicada o todas las de TURNOS del año actual en adelante (la más reciente si ninguna aplica)."""
     if sheet:
-        return wb[sheet]
+        return [wb[sheet]]
     candidates = [n for n in wb.sheetnames if "turnos" in n.lower()]
     if not candidates:
         raise ValueError("El Excel no contiene una hoja de turnos (nombre con 'TURNOS').")
-    return wb[max(candidates, key=lambda n: int(re.search(r"\d{4}", n).group()) if re.search(r"\d{4}", n) else 0)]
+
+    def year_of(name):
+        m = re.search(r"\d{4}", name)
+        return int(m.group()) if m else 0
+
+    current = [n for n in candidates if year_of(n) >= date.today().year]
+    chosen = current or [max(candidates, key=year_of)]
+    return [wb[n] for n in sorted(chosen, key=year_of)]
 
 
 def _sheet_year(ws):
@@ -123,13 +131,10 @@ def _is_induction(value):
     return value is not None and re.search(r"(INDUC\w*|SOPORTE)\s*(T|TURNO)\s*\d", str(value).upper()) is not None
 
 
-def parse_workbook(xlsx_path, users_path, sheet=None):
-    """Devuelve (turnos, vacaciones, inducciones, advertencias).
+def _parse_sheet(ws, users):
+    """Devuelve (turnos, vacaciones, inducciones, advertencias) de una hoja.
     turnos: {fecha: {rol: usuario}}; vacaciones: [(usuario, desde, hasta)]; inducciones: [(usuario, fecha)]."""
-    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-    ws = _pick_sheet(wb, sheet)
     year = _sheet_year(ws)
-    users = _read_users(users_path)
     warnings = []
 
     last_col = _last_header_col(ws)
@@ -147,7 +152,7 @@ def parse_workbook(xlsx_path, users_path, sheet=None):
         else:
             unmapped.append(name.replace("\xa0", " ").strip())
     if unmapped:
-        warnings.append("Sin usuario en 'Grupos - Usuarios' (omitidos): " + ", ".join(unmapped))
+        warnings.append(f"[{ws.title}] Sin usuario en 'Grupos - Usuarios' (omitidos): " + ", ".join(unmapped))
 
     turnos = {d: {} for d in dates.values()}
     inducciones = set()
@@ -183,6 +188,23 @@ def parse_workbook(xlsx_path, users_path, sheet=None):
                 vacaciones.append((username, dates[c], dates[c]))
     vacaciones.sort(key=lambda v: (v[1], v[0]))
     return turnos, vacaciones, sorted(inducciones, key=lambda i: (i[1], i[0])), warnings
+
+
+def parse_workbook(xlsx_path, users_path, sheet=None):
+    """Combina las hojas de turnos; si una fecha está en dos hojas, prevalece la hoja más reciente."""
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+    users = _read_users(users_path)
+    turnos, vacaciones, inducciones, warnings = {}, set(), set(), []
+    for ws in _pick_sheets(wb, sheet):
+        t, v, i, w = _parse_sheet(ws, users)
+        for d, slot in t.items():
+            if slot or d not in turnos:
+                turnos[d] = slot
+        vacaciones.update(v)
+        inducciones.update(i)
+        warnings.extend(w)
+    return (turnos, sorted(vacaciones, key=lambda v: (v[1], v[0])),
+            sorted(inducciones, key=lambda i: (i[1], i[0])), warnings)
 
 
 def _read_existing_shifts(path):
