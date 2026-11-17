@@ -156,11 +156,15 @@ def _parse_sheet(ws, users):
 
     turnos = {d: {} for d in dates.values()}
     inducciones = set()
+    soportes = []
     for r, username in row_user.items():
         for c in range(FIRST_DATA_COL, last_col + 1):
             value = ws.cell(r, c).value
             if _is_induction(value):
                 inducciones.add((username, dates[c]))
+                support = re.search(r"SOPORTE\s*TURNO\s*([1-4])", str(value).upper())
+                if support:
+                    soportes.append((dates[c], f"Turno {support.group(1)}", username))
                 continue
             role = _role_of(value)
             if not role:
@@ -171,6 +175,11 @@ def _parse_sheet(ws, users):
                 inducciones.add((username, dates[c]))
             else:
                 slot[role] = username
+
+    # Si nadie más cubre ese turno, quien da soporte figura como responsable del turno
+    for fecha, role, username in soportes:
+        if not turnos[fecha].get(role):
+            turnos[fecha][role] = username
 
     vacaciones = []
     covered = set()
@@ -198,8 +207,7 @@ def parse_workbook(xlsx_path, users_path, sheet=None):
     for ws in _pick_sheets(wb, sheet):
         t, v, i, w = _parse_sheet(ws, users)
         for d, slot in t.items():
-            if slot or d not in turnos:
-                turnos[d] = slot
+            turnos.setdefault(d, {}).update(slot)
         vacaciones.update(v)
         inducciones.update(i)
         warnings.extend(w)

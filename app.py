@@ -1058,7 +1058,15 @@ def update_week():
             row[date_col] = date_str
             rows.append(row)
 
-        day_data = (dias_payload.get(date_str) or dias_payload.get(iso_str)) if dias_payload else None
+        day_data = None
+        if dias_payload:
+            # El navegador envía dd/mm/yyyy; el servidor también acepta el formato de Windows e ISO
+            for key in (date_str, iso_str, day.strftime("%d/%m/%Y")):
+                if key in dias_payload:
+                    day_data = dias_payload[key]
+                    break
+            if day_data is None:
+                continue
         if day_data:
             for role in ROLES:
                 val = day_data.get(role, "").strip()

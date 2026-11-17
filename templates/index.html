@@ -2232,7 +2232,11 @@
       setSelectVal("shiftT1", rowT123 ? rowT123["Turno 1"] : "");
       setSelectVal("shiftT2", rowT123 ? rowT123["Turno 2"] : "");
       setSelectVal("shiftT3", rowT123 ? rowT123["Turno 3"] : "");
-      setSelectVal("shiftSabT4", rowSab ? rowSab["Turno 4"] : "");
+      // Si el Turno 4 quedó en un feriado entre semana (p. ej. viernes), se precarga desde ese día
+      const t4Weekday = [0, 1, 2, 3, 4]
+        .map(off => findShiftRowByDate(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + off)))
+        .find(r => r && r["Turno 4"]);
+      setSelectVal("shiftSabT4", (rowSab && rowSab["Turno 4"]) || (t4Weekday ? t4Weekday["Turno 4"] : ""));
       setSelectVal("shiftSabSB", rowSab ? rowSab["Stand-by"] : "");
       setSelectVal("shiftDomSB", rowDom ? rowDom["Stand-by"] : "");
 
