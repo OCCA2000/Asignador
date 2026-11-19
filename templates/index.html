@@ -1153,7 +1153,11 @@
             <h2>👥 Carga y Estado del Equipo</h2>
             <p class="panel-desc" id="teamWorkloadSource">Tickets activos por integrante.</p>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="file" class="assignedCsvFile" data-kind="incidentes" accept=".csv" style="display:none;">
+            <button type="button" class="btn importAssignedCsv" style="padding:6px 12px;font-size:12px;">📥 Cargar incidentes asignados</button>
+            <input type="file" class="assignedCsvFile" data-kind="requerimientos" accept=".csv" style="display:none;">
+            <button type="button" class="btn importAssignedCsv" style="padding:6px 12px;font-size:12px;">📥 Cargar requerimientos asignados</button>
             <span class="badge active" id="teamActiveCount">0 activos</span>
             <span class="badge warn" id="teamInactiveCount">0 inactivos</span>
           </div>
@@ -3173,6 +3177,33 @@
         btn.disabled = false;
         btn.textContent = origText;
       }
+    });
+
+    document.querySelectorAll(".importAssignedCsv").forEach((btn) => {
+      const input = btn.previousElementSibling;
+      btn.addEventListener("click", () => input.click());
+      input.addEventListener("change", async (ev) => {
+        const file = ev.target.files[0];
+        ev.target.value = "";
+        if (!file) return;
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "⏳ Importando...";
+        try {
+          const form = new FormData();
+          form.append("file", file);
+          const r = await fetch(`/api/assigned/${input.dataset.kind}/import`, { method: "POST", body: form });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || "No se pudo importar el CSV.");
+          notice(`Cargado ${d.archivo}: ${d.registros} registros.`);
+          loadDashboard();
+        } catch (e) {
+          notice(e.message, "err");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = origText;
+        }
+      });
     });
 
     $("saveWeek").addEventListener("click", async () => {

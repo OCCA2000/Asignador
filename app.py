@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
 
-from Programas.PipelineUtils import ensure_execution_summary_csv, append_execution_summary, get_windows_date_format
+from Programas.PipelineUtils import ensure_execution_summary_csv, append_execution_summary, get_windows_date_format, clean_dataset_encodings
 from Programas.AvailabilitySync import apply_availability_rules, forget_auto_disabled
 from Programas.ShiftImporter import import_excel
 
@@ -966,6 +966,30 @@ def import_shifts():
         tmp.unlink(missing_ok=True)
     apply_availability_rules(str(CONFIG_DIR))
     return jsonify(ok=True, **result)
+
+
+@app.post("/api/assigned/<kind>/import")
+def import_assigned(kind):
+    targets = {"incidentes": ASSIGNED_FILES[0], "requerimientos": ASSIGNED_FILES[1]}
+    target = targets.get(kind)
+    if target is None:
+        return jsonify(error="Tipo de archivo no válido."), 404
+    f = request.files.get("file")
+    if not f or not f.filename.lower().endswith(".csv"):
+        return jsonify(error="Adjunta un archivo .csv."), 400
+    tmp = CONFIG_DIR / f"_{target.stem}_import.csv"
+    f.save(tmp)
+    try:
+        df = clean_dataset_encodings(str(tmp), in_place=True, verbose=False)
+        missing = {"number", "state", "assigned_to"} - set(df.columns)
+        if missing:
+            return jsonify(error=f"El CSV no contiene las columnas requeridas: {', '.join(sorted(missing))}."), 400
+        os.replace(tmp, target)
+    except Exception as exc:
+        return jsonify(error=f"No se pudo importar el CSV: {exc}"), 400
+    finally:
+        tmp.unlink(missing_ok=True)
+    return jsonify(ok=True, archivo=target.name, registros=len(df))
 
 
 @app.delete("/api/users/<username>")
