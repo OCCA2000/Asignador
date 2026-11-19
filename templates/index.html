@@ -485,6 +485,49 @@
       grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
       gap: 16px;
     }
+    /* Master-detail de especialidades */
+    .spec-split {
+      display: grid;
+      grid-template-columns: minmax(240px, 320px) 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .spec-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 560px;
+      overflow-y: auto;
+      padding: 6px;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      background: #ffffff;
+    }
+    .spec-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: none;
+      font: inherit;
+      font-size: 13px;
+      color: var(--slate-800);
+      text-align: left;
+      cursor: pointer;
+    }
+    .spec-item:hover { background: var(--slate-100); }
+    .spec-item.active {
+      background: #f0fdfa;
+      border-color: var(--primary);
+      font-weight: 600;
+    }
+    @media (max-width: 800px) {
+      .spec-split { grid-template-columns: 1fr; }
+    }
+
     .group-card {
       border: 1px solid var(--slate-200);
       border-radius: 12px;
@@ -1485,7 +1528,7 @@
           </div>
           <input class="search-box" id="incSearch" placeholder="🔍 Filtrar grupos de incidentes..." style="min-width:300px;">
         </div>
-        <div id="incGroups" class="groups-grid"></div>
+        <div id="incGroups" class="spec-split"></div>
       </div>
     </section>
 
@@ -1530,7 +1573,7 @@
           </div>
           <input class="search-box" id="reqSearch" placeholder="🔍 Filtrar grupos de requerimientos..." style="min-width:300px;">
         </div>
-        <div id="reqGroups" class="groups-grid"></div>
+        <div id="reqGroups" class="spec-split"></div>
       </div>
     </section>
 
@@ -1861,59 +1904,92 @@
       `).join("") || `<tr><td colspan="5" class="empty-state">No se encontraron usuarios coincidentes.</td></tr>`;
     }
 
+    const selectedGroup = { incidentes: null, requerimientos: null };
+
     function renderGroups(kind) {
       const groups = state?.[kind] || [];
-      const target = kind === "incidentes" ? "incGroups" : "reqGroups";
+      const target = $(kind === "incidentes" ? "incGroups" : "reqGroups");
       const search = $(kind === "incidentes" ? "incSearch" : "reqSearch").value.toLowerCase();
+      const membersId = `${kind}_members`;
+
+      // Conserva marcas sin guardar si se refresca el mismo grupo
+      const prevBox = $(membersId);
+      const draft = prevBox && prevBox.dataset.group === selectedGroup[kind]
+        ? new Set([...prevBox.querySelectorAll('input:checked')].map(cb => cb.value)) : null;
+      const prevSearch = $(`${kind}_peopleSearch`)?.value || "";
+
+      if (!groups.some(g => g.nombre === selectedGroup[kind])) selectedGroup[kind] = null;
+      const filtered = groups.filter(g => g.nombre.toLowerCase().includes(search));
+      const current = groups.find(g => g.nombre === selectedGroup[kind]);
       const active = (state?.users || []).slice().sort((a,b) => a.nombre.localeCompare(b.nombre));
 
-      const filtered = groups.filter(g => g.nombre.toLowerCase().includes(search));
-      $(target).innerHTML = filtered.map((g, idx) => {
-        const containerId = `${kind}_${idx}`;
-        const countId = `${kind}_${idx}_count`;
-        return `
+      const list = filtered.map(g => `
+        <button type="button" class="spec-item ${g.nombre === selectedGroup[kind] ? 'active' : ''}" data-name="${esc(g.nombre)}" onclick="selectGroup('${kind}', this.dataset.name)">
+          <span>${esc(g.nombre)}</span>
+          <span class="badge" style="background:#f1f5f9;color:#475569;">${g.miembros.length}</span>
+        </button>`).join("") || '<div class="empty-state">No hay grupos coincidentes.</div>';
+
+      let detail = '<div class="empty-state">Selecciona una especialidad de la lista para ver y editar a sus integrantes.</div>';
+      if (current) {
+        const checked = draft || new Set(current.miembros);
+        detail = `
         <article class="group-card">
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            <h3>${esc(g.nombre)}</h3>
-            <span class="badge" style="background:#f1f5f9;color:#475569;">${g.miembros.length} miembro(s)</span>
+            <h3>${esc(current.nombre)}</h3>
+            <span class="badge" style="background:#f1f5f9;color:#475569;">${current.miembros.length} miembro(s) guardados</span>
           </div>
-          <div class="members-tags">
-            ${g.miembros.map(m => `<span class="member-tag" title="${esc(userName(m))}">${esc(m)}</span>`).join("") || '<span class="text-muted" style="font-size:12px;">Sin integrantes asignados</span>'}
-          </div>
-          <div class="field" style="margin-bottom:0;">
-            <div class="checklist-actions">
-              <label style="font-size:11px;font-weight:600;color:var(--slate-700);">Capacitados asignados (<span id="${countId}">${g.miembros.length}</span>):</label>
-              <div>
-                <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('${containerId}', true)">Todos</button>
-                ·
-                <button type="button" class="checklist-btn-link" onclick="toggleAllCheckboxes('${containerId}', false)">Ninguno</button>
-              </div>
-            </div>
-            <div id="${containerId}" class="checklist-box">
-              ${active.map(u => {
-                const isChecked = g.miembros.includes(u.usuario);
-                const isEnabled = String(u.estado) === "1";
-                return `
-                <label class="checklist-item ${isChecked ? 'checked' : ''} ${!isEnabled ? 'disabled-user' : ''}">
-                  <input type="checkbox" value="${esc(u.usuario)}" ${isChecked ? 'checked' : ''} onchange="onMemberCheckChange(this, '${containerId}', '${countId}')">
-                  <span>
-                    <strong>${esc(u.nombre)}</strong>
-                    <code style="font-size:11px;color:var(--slate-500);margin-left:4px;">(${esc(u.usuario)})</code>
-                    ${isEnabled ? '' : '<span style="color:#ef4444;font-size:10px;margin-left:4px;">[deshabilitado]</span>'}
-                  </span>
-                </label>
-                `;
-              }).join("")}
+          <div class="checklist-actions">
+            <label style="font-size:11px;font-weight:600;color:var(--slate-700);">Capacitados asignados (<span id="${membersId}_count">${checked.size}</span>):</label>
+            <div>
+              <button type="button" class="checklist-btn-link" onclick="setVisiblePeople('${membersId}', true)">Todos</button> ·
+              <button type="button" class="checklist-btn-link" onclick="setVisiblePeople('${membersId}', false)">Ninguno</button>
             </div>
           </div>
-          <div style="margin-top:8px;">
-            <button class="btn primary" style="width:100%;font-size:12px;" onclick="saveGroup('${kind}', '${esc(g.nombre)}', '${containerId}', this)">
-              💾 Guardar cambios de grupo
-            </button>
+          <input class="search-box" id="${kind}_peopleSearch" value="${esc(prevSearch)}" placeholder="🔍 Filtrar personas..." style="width:100%;" oninput="filterPeople('${membersId}', this.value)">
+          <div id="${membersId}" class="checklist-box" data-group="${esc(current.nombre)}" style="max-height:420px;">
+            ${active.map(u => {
+              const isChecked = checked.has(u.usuario);
+              const isEnabled = String(u.estado) === "1";
+              return `
+              <label class="checklist-item ${isChecked ? 'checked' : ''} ${!isEnabled ? 'disabled-user' : ''}" data-search="${esc((u.nombre + ' ' + u.usuario).toLowerCase())}">
+                <input type="checkbox" value="${esc(u.usuario)}" ${isChecked ? 'checked' : ''} onchange="onMemberCheckChange(this, '${membersId}', '${membersId}_count')">
+                <span>
+                  <strong>${esc(u.nombre)}</strong>
+                  <code style="font-size:11px;color:var(--slate-500);margin-left:4px;">(${esc(u.usuario)})</code>
+                  ${isEnabled ? '' : '<span style="color:#ef4444;font-size:10px;margin-left:4px;">[deshabilitado]</span>'}
+                </span>
+              </label>`;
+            }).join("")}
           </div>
-        </article>
-      `;
-      }).join("") || '<div class="empty-state" style="grid-column:1/-1;">No hay grupos coincidentes.</div>';
+          <button class="btn primary" style="width:100%;font-size:12px;" data-name="${esc(current.nombre)}" onclick="saveGroup('${kind}', this.dataset.name, '${membersId}', this)">
+            💾 Guardar cambios de grupo
+          </button>
+        </article>`;
+      }
+
+      target.innerHTML = `<div class="spec-list">${list}</div><div class="spec-detail">${detail}</div>`;
+      if (current && prevSearch) filterPeople(membersId, prevSearch);
+    }
+
+    function selectGroup(kind, name) {
+      selectedGroup[kind] = name;
+      renderGroups(kind);
+    }
+
+    function filterPeople(containerId, text) {
+      const q = text.trim().toLowerCase();
+      $(containerId).querySelectorAll('.checklist-item').forEach(el => {
+        el.style.display = el.dataset.search.includes(q) ? '' : 'none';
+      });
+    }
+
+    function setVisiblePeople(containerId, checked) {
+      $(containerId).querySelectorAll('.checklist-item').forEach(el => {
+        if (el.style.display === 'none') return;
+        el.querySelector('input').checked = checked;
+        el.classList.toggle('checked', checked);
+      });
+      $(`${containerId}_count`).textContent = $(containerId).querySelectorAll('input:checked').length;
     }
 
     function renderShifts() {
