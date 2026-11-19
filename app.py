@@ -933,7 +933,7 @@ def update_user(username):
         return jsonify(error="Usuario no encontrado."), 404
     if "estado" in d:
         u["estado"] = "1" if str(d["estado"]) == "1" else "0"
-        forget_auto_disabled(u["usuario"], CONFIG_DIR)
+        forget_auto_disabled(u["usuario"], CONFIG_DIR, enabled=u["estado"] == "1")
     if "nombre" in d and str(d["nombre"]).strip():
         u["nombre"] = str(d["nombre"]).strip()
     if "snow_id" in d and str(d["snow_id"]).strip():

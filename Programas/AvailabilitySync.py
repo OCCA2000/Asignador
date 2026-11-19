@@ -6,6 +6,7 @@ Reglas:
   (inicio en lunes => deshabilitado desde el miércoles anterior).
 - Durante unas vacaciones queda deshabilitado hasta la fecha 'Hasta'.
 Solo se reactivan los usuarios que este módulo deshabilitó; los deshabilitados a mano no se tocan.
+Si alguien habilita a mano a un usuario dentro de su ventana de bloqueo, se respeta hasta que esa ventana termine.
 """
 import csv
 import json
@@ -122,27 +123,50 @@ def blocked_users(shifts_path, vacations_path, today=None, inductions_path=None)
     return blocked
 
 
-def _load_auto_state(state_path):
+def _load_state(state_path):
     try:
         with open(state_path, encoding="utf-8") as f:
-            return set(json.load(f).get("usuarios", []))
+            data = json.load(f)
     except (OSError, ValueError):
-        return set()
+        data = {}
+    exceptions = {}
+    for user, until in (data.get("excepciones") or {}).items():
+        d = _to_date(until)
+        if d:
+            exceptions[user] = d
+    return set(data.get("usuarios", [])), exceptions
 
 
-def _save_auto_state(state_path, users):
+def _save_state(state_path, users, exceptions):
+    data = {"usuarios": sorted(users),
+            "excepciones": {u: d.isoformat() for u, d in sorted(exceptions.items())}}
     with open(state_path, "w", encoding="utf-8") as f:
-        json.dump({"usuarios": sorted(users)}, f, indent=2)
+        json.dump(data, f, indent=2)
 
 
-def forget_auto_disabled(username, config_dir="Especificaciones"):
-    """Marca como manual el estado de un usuario (p. ej. tras editarlo desde la interfaz)."""
+def _window_end(user, config_dir, today):
+    """Fin de la ventana de bloqueo (la más larga) que contiene hoy para el usuario, o None."""
+    config_dir = Path(config_dir)
+    ends = []
+    for windows in (_shift_windows(config_dir / "Turnos.csv", config_dir / "Apoyos_Turno.csv"),
+                    _vacation_windows(config_dir / "Vacaciones.csv")):
+        ends += [b for a, b in windows.get(user, []) if a <= today <= b]
+    return max(ends) if ends else None
+
+
+def forget_auto_disabled(username, config_dir="Especificaciones", enabled=False, today=None):
+    """Registra un cambio manual de estado: deja de ser automático y, si se habilita dentro de una
+    ventana de bloqueo, se respeta hasta que esa ventana termine."""
+    user = username.strip().lower()
     state_path = Path(config_dir) / STATE_FILE
-    state = _load_auto_state(state_path)
-    if username.strip().lower() in state:
-        state.discard(username.strip().lower())
-        _save_auto_state(state_path, state)
-
+    auto, exceptions = _load_state(state_path)
+    auto.discard(user)
+    exceptions.pop(user, None)
+    if enabled:
+        end = _window_end(user, config_dir, today or date.today())
+        if end:
+            exceptions[user] = end
+    _save_state(state_path, auto, exceptions)
 
 def apply_availability_rules(config_dir="Especificaciones"):
     """Sincroniza el estado de los usuarios sin interrumpir la asignación si algo falla."""
@@ -175,7 +199,9 @@ def sync_user_status(config_dir="Especificaciones", today=None, users_file="Grup
         return [], []
 
     blocked = blocked_users(config_dir / "Turnos.csv", config_dir / "Vacaciones.csv", today, config_dir / "Apoyos_Turno.csv")
-    auto = _load_auto_state(state_path)
+    auto, exceptions = _load_state(state_path)
+    today = today or date.today()
+    exceptions = {u: d for u, d in exceptions.items() if d >= today}
     disabled, reenabled, changed = [], [], False
     present = set()
 
@@ -185,6 +211,8 @@ def sync_user_status(config_dir="Especificaciones", today=None, users_file="Grup
         user = r[user_idx].strip().lower()
         present.add(user)
         is_on = r[estado_idx].strip() in ("1", "S", "s", "true", "True")
+        if user in blocked and user in exceptions:
+            continue
         if user in blocked and is_on:
             r[estado_idx] = "0"
             auto.add(user)
@@ -198,8 +226,9 @@ def sync_user_status(config_dir="Especificaciones", today=None, users_file="Grup
             auto.discard(user)
 
     auto &= present
+    exceptions = {u: d for u, d in exceptions.items() if u in present}
     if changed:
         with users_path.open("w", encoding="utf-8-sig", newline="") as f:
             csv.writer(f, delimiter=DELIM, lineterminator="\n").writerows(rows)
-    _save_auto_state(state_path, auto)
+    _save_state(state_path, auto, exceptions)
     return disabled, reenabled
