@@ -590,6 +590,45 @@
       color: var(--primary-dark);
     }
 
+    /* Specialty chips */
+    .spec-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .spec-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 170px;
+      overflow-y: auto;
+      padding: 8px;
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+    .spec-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border: 1px solid var(--slate-300);
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--slate-800);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .spec-chip:hover { background: var(--slate-100); }
+    .spec-chip input { display: none; }
+    .spec-chip.checked {
+      background: #ccfbf1;
+      border-color: var(--primary);
+      color: var(--primary-dark);
+      font-weight: 600;
+    }
+
     /* Shifts Grid */
     .shifts-grid {
       display: grid;
@@ -1345,15 +1384,32 @@
                 <option value="0">0 · Deshabilitado (Ausente/Guardia)</option>
               </select>
             </div>
-            <div class="field">
-              <label for="incSelect">Especialidades en Incidentes</label>
-              <select id="incSelect" multiple></select>
-              <span class="field-hint">Usa Ctrl / Cmd + clic para selección múltiple</span>
+            <div class="field" style="grid-column:1/-1;">
+              <label for="copyFromUser">Copiar especialidades de un compañero</label>
+              <select id="copyFromUser"></select>
+              <span class="field-hint">Precarga las especialidades del integrante elegido; luego puedes ajustarlas.</span>
             </div>
-            <div class="field">
-              <label for="reqSelect">Especialidades en Requerimientos</label>
-              <select id="reqSelect" multiple></select>
-              <span class="field-hint">Usa Ctrl / Cmd + clic para selección múltiple</span>
+            <div class="field" style="grid-column:1/-1;">
+              <div class="spec-header">
+                <label>Especialidades en Incidentes (<span id="incSpecCount">0</span>)</label>
+                <div>
+                  <button type="button" class="checklist-btn-link" onclick="setVisibleSpecs('incSpecs', true)">Todos</button> ·
+                  <button type="button" class="checklist-btn-link" onclick="setVisibleSpecs('incSpecs', false)">Ninguno</button>
+                </div>
+              </div>
+              <input class="search-box" id="incSpecSearch" placeholder="🔍 Filtrar especialidades..." style="width:100%;margin-bottom:6px;">
+              <div id="incSpecs" class="spec-chips"></div>
+            </div>
+            <div class="field" style="grid-column:1/-1;">
+              <div class="spec-header">
+                <label>Especialidades en Requerimientos (<span id="reqSpecCount">0</span>)</label>
+                <div>
+                  <button type="button" class="checklist-btn-link" onclick="setVisibleSpecs('reqSpecs', true)">Todos</button> ·
+                  <button type="button" class="checklist-btn-link" onclick="setVisibleSpecs('reqSpecs', false)">Ninguno</button>
+                </div>
+              </div>
+              <input class="search-box" id="reqSpecSearch" placeholder="🔍 Filtrar especialidades..." style="width:100%;margin-bottom:6px;">
+              <div id="reqSpecs" class="spec-chips"></div>
             </div>
           </div>
           <div style="margin-top:18px;display:flex;gap:10px;">
@@ -1667,8 +1723,63 @@
       return u ? `${u.nombre} (${u.usuario})` : username;
     }
 
-    function fillGroupSelect(id, groups) {
-      $(id).innerHTML = (groups || []).map(g => `<option value="${esc(g.nombre)}">${esc(g.nombre)}</option>`).join("");
+    function fillSpecChips(id, groups) {
+      const box = $(id);
+      const prev = new Set(getSelectedSpecs(id));
+      box.innerHTML = (groups || []).map(g => {
+        const on = prev.has(g.nombre);
+        return `<label class="spec-chip ${on ? 'checked' : ''}"><input type="checkbox" value="${esc(g.nombre)}" ${on ? 'checked' : ''}>${esc(g.nombre)}</label>`;
+      }).join("");
+      filterSpecChips(id);
+      updateSpecCount(id);
+    }
+
+    function getSelectedSpecs(id) {
+      return [...$(id).querySelectorAll('input:checked')].map(cb => cb.value);
+    }
+
+    function updateSpecCount(id) {
+      $(id.replace('Specs', 'SpecCount')).textContent = getSelectedSpecs(id).length;
+    }
+
+    function setSpecs(id, names) {
+      const wanted = new Set(names);
+      $(id).querySelectorAll('input').forEach(cb => {
+        cb.checked = wanted.has(cb.value);
+        cb.parentElement.classList.toggle('checked', cb.checked);
+      });
+      updateSpecCount(id);
+    }
+
+    function setVisibleSpecs(id, checked) {
+      $(id).querySelectorAll('.spec-chip').forEach(chip => {
+        if (chip.style.display === 'none') return;
+        const cb = chip.querySelector('input');
+        cb.checked = checked;
+        chip.classList.toggle('checked', checked);
+      });
+      updateSpecCount(id);
+    }
+
+    function filterSpecChips(id) {
+      const q = $(id.replace('Specs', 'SpecSearch')).value.trim().toLowerCase();
+      $(id).querySelectorAll('.spec-chip').forEach(chip => {
+        chip.style.display = chip.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    }
+
+    function fillCopyFromUsers() {
+      const sel = $("copyFromUser");
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">— Ninguno (selección manual) —</option>' +
+        (state?.users || []).map(u => `<option value="${esc(u.usuario)}">${esc(u.nombre)} (${esc(u.usuario)})</option>`).join("");
+      sel.value = [...sel.options].some(o => o.value === prev) ? prev : "";
+    }
+
+    function copySpecsFromUser(username) {
+      const names = kind => (state?.[kind] || []).filter(g => g.miembros.includes(username)).map(g => g.nombre);
+      setSpecs("incSpecs", username ? names("incidentes") : []);
+      setSpecs("reqSpecs", username ? names("requerimientos") : []);
     }
 
     function onMemberCheckChange(checkbox, containerId, countId) {
@@ -2282,8 +2393,9 @@
       if ($("statPendingInc")) $("statPendingInc").textContent = pend.incidentes;
       if ($("statPendingReq")) $("statPendingReq").textContent = pend.requerimientos;
 
-      fillGroupSelect("incSelect", state?.incidentes);
-      fillGroupSelect("reqSelect", state?.requerimientos);
+      fillSpecChips("incSpecs", state?.incidentes);
+      fillSpecChips("reqSpecs", state?.requerimientos);
+      fillCopyFromUsers();
       fillMembersChecklist("newIncGroupMembers", "newIncCount");
       fillMembersChecklist("newReqGroupMembers", "newReqCount");
 
@@ -3136,8 +3248,8 @@
         usuario: $("usuario").value.trim(),
         snow_id: $("snow").value.trim(),
         estado: $("estado").value,
-        incidentes: [...$("incSelect").selectedOptions].map(o => o.value),
-        requerimientos: [...$("reqSelect").selectedOptions].map(o => o.value)
+        incidentes: getSelectedSpecs("incSpecs"),
+        requerimientos: getSelectedSpecs("reqSpecs")
       };
       try {
         await api("/api/users", { method: "POST", body: JSON.stringify(payload) });
@@ -3148,6 +3260,22 @@
         notice(err.message, "err");
       }
     });
+
+    ["incSpecs", "reqSpecs"].forEach(id => {
+      const box = $(id);
+      box.addEventListener("change", e => {
+        e.target.parentElement.classList.toggle("checked", e.target.checked);
+        updateSpecCount(id);
+      });
+      $(id.replace("Specs", "SpecSearch")).addEventListener("input", () => filterSpecChips(id));
+    });
+    $("copyFromUser").addEventListener("change", e => copySpecsFromUser(e.target.value));
+    $("userForm").addEventListener("reset", () => setTimeout(() => {
+      setSpecs("incSpecs", []);
+      setSpecs("reqSpecs", []);
+      filterSpecChips("incSpecs");
+      filterSpecChips("reqSpecs");
+    }, 0));
 
     $("userSearch").addEventListener("input", renderUsers);
     $("incSearch").addEventListener("input", () => renderGroups("incidentes"));
