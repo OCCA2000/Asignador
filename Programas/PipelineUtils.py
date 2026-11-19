@@ -291,6 +291,27 @@ def get_spanish_stopwords() -> set:
     return _SPANISH_STOPWORDS
 
 
+def get_model_settings(ticket_type: str, config_path: str = "Especificaciones/rpa_config_parameters.json") -> tuple:
+    """Lee (model_type, architecture) de la clave 'assignment_model' del JSON de configuración.
+
+    ticket_type: 'incidents' | 'requirements'. Si falta la clave, usa semisupervised/hnlp_mc.
+    """
+    import json
+    defaults = {"model_type": "semisupervised", "architecture": "hnlp_mc"}
+    try:
+        with open(config_path, encoding="utf-8-sig") as fh:
+            cfg = (json.load(fh).get("assignment_model") or {}).get(ticket_type) or {}
+    except Exception:
+        cfg = {}
+    model_type = str(cfg.get("model_type", defaults["model_type"])).strip().lower()
+    architecture = str(cfg.get("architecture", defaults["architecture"])).strip().lower()
+    if model_type not in ("supervised", "semisupervised"):
+        raise ValueError(f"assignment_model.{ticket_type}.model_type inválido: '{model_type}' (use 'supervised' o 'semisupervised')")
+    if architecture not in ("hnlp_mc", "tfidf"):
+        raise ValueError(f"assignment_model.{ticket_type}.architecture inválido: '{architecture}' (use 'hnlp_mc' o 'tfidf')")
+    return model_type, architecture
+
+
 def add_prediction_confidence(df, model, X, predicted_labels=None):
     """Agrega `confianza_prediccion` (0-1) y `tipo_confianza` al DataFrame.
 

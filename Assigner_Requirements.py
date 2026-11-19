@@ -8,6 +8,7 @@ from Programas.PipelineUtils import (
     add_prediction_confidence,
     count_input_records,
     has_input_records,
+    get_model_settings,
 )
 from Programas.Trainer import save_predictions_to_categorized_dataset
 from datetime import datetime, timedelta
@@ -501,14 +502,14 @@ def main():
     )
 
     # Realizar predicciones (usando modelos entrenados)
-    # model_type: 'supervised' | 'semisupervised'
-    # architecture (solo para semisupervised): 'hnlp_mc' (default) | 'tfidf'
+    # Se parametriza en Especificaciones/rpa_config_parameters.json -> assignment_model.requirements
+    model_type, architecture = get_model_settings('requirements')
     print("Making assignment predictions for requirements...")
     df_requirements = predict_requirement_assignments(
         df_requirements,
         balancer,
-        model_type='semisupervised',
-        architecture='hnlp_mc'
+        model_type=model_type,
+        architecture=architecture
     )
 
     generate_assignment_reports(df_requirements, timing, balancer)
