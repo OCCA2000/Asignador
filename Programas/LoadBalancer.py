@@ -16,6 +16,10 @@ def _normalize_text(text):
     s = re.sub(r'\s+', ' ', s).strip()
     return s
 
+def _canonical(text):
+    """Normaliza y singulariza cada palabra para comparar sin depender de mayúsculas, tildes ni plurales."""
+    return ' '.join(t[:-1] if t.endswith('s') else t for t in _normalize_text(text).split())
+
 class WorkloadBalancer:
     def __init__(self, groups_path="Especificaciones/Grupos - Incidentes(Grupos).csv", users_path="Especificaciones/Grupos - Usuarios.csv", assigned_incidents="Especificaciones/assigned_incidents.csv", assigned_requirements="Especificaciones/assigned_requirements.csv", resolved_weight=0.5,     resolved_days_window=7, shifts_path="Especificaciones/Turnos.csv", config_path="Especificaciones/rpa_config_parameters.json"):
         self.config_path = config_path
@@ -23,6 +27,7 @@ class WorkloadBalancer:
         if not self.reviewer_user:
             print(f"[ADVERTENCIA] 'reviewer_user' no está configurado en {config_path}: "
                   "los tickets que no se puedan enrutar quedarán sin asignatario.")
+        self._load_shift_routing()
         self.groups_path = groups_path
         self.users_path = users_path
         self.assigned_incidents = assigned_incidents
@@ -55,6 +60,31 @@ class WorkloadBalancer:
         except Exception as e:
             print(f"Warning: no se pudo leer 'reviewer_user' de {self.config_path}: {e}")
             return ""
+
+    def _load_shift_routing(self):
+        """Lee de 'shift_routing' las reglas que envían tickets a la persona de turno; sin configuración no se deriva nada a turno."""
+        cfg = {}
+        try:
+            with open(self.config_path, encoding='utf-8-sig') as f:
+                cfg = json.load(f).get("shift_routing") or {}
+        except Exception as e:
+            print(f"Warning: no se pudo leer 'shift_routing' de {self.config_path}: {e}")
+        if not cfg:
+            print(f"[ADVERTENCIA] 'shift_routing' no está configurado en {self.config_path}: "
+                  "no se derivarán tickets a la persona de turno por clasificación ni metadatos.")
+        classifications = cfg.get("classifications", [])
+        metadata = cfg.get("metadata_rules", {})
+        self.shift_classifications = {_canonical(c) for c in classifications if _canonical(c)}
+        self.shift_metadata_rules = {
+            col: {_canonical(v) for v in values if _canonical(v)}
+            for col, values in metadata.items()
+        }
+
+    def _is_shift_metadata(self, row):
+        return any(
+            _canonical(row.get(col, "")) in values
+            for col, values in self.shift_metadata_rules.items()
+        )
 
     def _unrouted_assignee(self, marker):
         """Devuelve el usuario revisor si está configurado; si no, conserva el marcador original."""
@@ -457,15 +487,7 @@ class WorkloadBalancer:
         reviewed = {}
         for idx, row in df.iterrows():
             review_reasons.append("")
-            category_val = str(row.get("category", "")).strip()
-            subcategory_val = str(row.get("u_subcategory", "")).strip()
-            contact_type_val = str(row.get("contact_type", "")).strip()
-            
-            is_metadata_shift = (
-                category_val == "Operación TI" or
-                subcategory_val == "Batch" or
-                contact_type_val == "Monitoreo"
-            )
+            is_metadata_shift = self._is_shift_metadata(row)
             
             classification_val = row.get(available_cls_col, '')
             
@@ -481,7 +503,7 @@ class WorkloadBalancer:
                 df.at[idx, available_cls_col] = "turno"
                 continue
                 
-            if(classification_val == 'trickle feed' or classification_val == 'reporte batch'):
+            if _canonical(classification_val) in self.shift_classifications:
                 shift_user = self.get_shift_user(row)
                 if shift_user:
                     new_assignees.append(shift_user)

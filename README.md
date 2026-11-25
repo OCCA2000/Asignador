@@ -476,10 +476,25 @@ El sistema deshabilita (`Estado = 0` en `Grupos - Usuarios.csv`) a quienes no de
   - `assigned_at`: Fecha y hora de procesamiento.
 
 ### Validaciones de Turno y Carga de Trabajo
-Aplica reglas automáticas para derivar incidentes específicos al personal en guardia/turno según `Especificaciones/Turnos.csv`:
-- **Operación TI**: Categoría "Operación TI".
-- **Batch**: Subcategoría "Batch" o clasificado/predicho como "reportes batch" o "trickle feed".
-- **Monitoreo**: Medio de contacto (`contact_type`) es "Monitoreo".
+Aplica reglas automáticas para derivar tickets específicos al personal en guardia/turno según `Especificaciones/Turnos.csv`. Las reglas se configuran en el bloque `shift_routing` de `Especificaciones/rpa_config_parameters.json` (si el bloque falta, no se deriva ningún ticket a turno y se muestra una advertencia):
+- **`classifications`** (incidentes y requerimientos): si la clasificación predicha por el modelo coincide con alguna de la lista, el ticket va a turno. Los valores se definen en el JSON de configuración. La comparación ignora mayúsculas, tildes y plurales. Estas clasificaciones no necesitan existir en los archivos de grupos.
+- **`metadata_rules`** (columnas del ticket → valores que activan la regla; basta con que se cumpla una). Solo aplica si el CSV trae la columna, por lo que en la práctica es para incidentes. Ejemplo:
+  - `category`: `<valor>`
+  - `u_subcategory`: `<valor>`
+  - `contact_type`: `<valor>`
+
+  Al cumplirse una, la clasificación del ticket se reescribe como `turno`.
+
+```json
+"shift_routing": {
+    "classifications": ["<clasificación 1>", "<clasificación 2>"],
+    "metadata_rules": {
+        "category": ["<valor>"],
+        "u_subcategory": ["<valor>"],
+        "contact_type": ["<valor>"]
+    }
+}
+```
 
 ---
 
